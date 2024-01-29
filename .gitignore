@@ -1,0 +1,10 @@
+.repl-port
+.nrepl-port
+hs_err_pid*.log
+.cpcache
+target
+.calva/
+.lsp/
+.portal/
+.clj-kondo/.cache/
+**/__pycache__/
