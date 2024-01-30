@@ -1,9 +1,10 @@
 (ns clj-reload.core-test
   (:require
-    [clj-reload.core :as clj-reload]
-    [clojure.test :refer [is are deftest testing]])
+    [clojure.java.io :as io]
+    [clojure.test :refer [is are deftest testing]]
+    [clj-reload.core :as clj-reload])
   (:import
-    [java.io PushbackReader StringReader StringWriter]))
+    [java.io File PushbackReader StringReader StringWriter]))
 
 (defn read-str [s]
   (clj-reload/read-file (PushbackReader. (StringReader. s))))
@@ -64,6 +65,35 @@ Unexpected :require form: [345]
 Unexpected :require form: [567 :as a]
 Unexpected :require form: [789 a b c]
 " (str out)))))
+
+
+(defn modify [& syms]
+  (let [now    (System/currentTimeMillis)
+        _      (doseq [^File file (next (file-seq (io/file "fixtures")))]
+                 (when (> (.lastModified file) now)
+                   (.setLastModified file now)))
+        state  #p (clj-reload/first-scan ["fixtures"])
+        now    (+ now 2000)
+        _      (doseq [sym syms
+                       :let [file (io/file "fixtures" (str sym ".clj"))]]
+                 (.setLastModified ^File file now))
+        *track (atom [])
+        state' (binding [clj-reload/*log-fn* #(swap! *track conj (vec %&))]
+                 (clj-reload/reload #p (clj-reload/scan #p state)))]
+    @*track))
+
+;    a     f     i  l 
+;  / | \ /   \   |    
+; b  c  d  h  g  j    
+;     \ | /      |    
+;       e        k    
+
+(deftest reload-test
+  (is (= [[:unload 'a] [:load 'a]] (modify 'a)))
+  (is (= [[:unload 'a] [:unload 'b] [:load 'b] [:load 'a]] (modify 'b))))
+
+(comment
+  (modify 'a 'b))
 
 ; (test/test-ns *ns*)
 ; (test/run-test-var #'var)
