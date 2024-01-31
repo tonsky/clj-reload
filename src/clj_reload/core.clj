@@ -225,11 +225,18 @@
 
 (defn ns-unload [ns]
   (when *log-fn*
-    (*log-fn* :unload ns)))
+    (*log-fn* :unload ns))
+  (remove-ns ns)
+  (dosync
+    (alter @#'clojure.core/*loaded-libs* disj ns)))
 
 (defn ns-load [ns]
   (when *log-fn*
-    (*log-fn* :load ns)))
+    (*log-fn* :load ns))
+  (try
+    (require ns :reload)
+    (catch Throwable t
+      (println t))))
 
 (defn reload
   ([]
