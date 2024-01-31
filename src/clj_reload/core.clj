@@ -13,6 +13,7 @@
   false)
 
 ; {:dirs    [<string> ...]
+;  :exclude #{<symbol> ...}
 ;  :sicne   <long>
 ;  :files   {<file> -> File}
 ;  :changed {<file> -> File}}
@@ -20,7 +21,7 @@
 ;  File :: {:modified   <long>
 ;           :namespaces {<symbol> -> Namespace}}
 ;
-;  Namespace :: {:depends -> #{<symbol> ...}}
+;  Namespace :: {:depends #{<symbol> ...}}
 
 (def *state
   (atom
@@ -220,15 +221,20 @@
       :files   (:changed state')
       :changed {})))
 
-(defn set-dirs [dirs]
+(defn set-dirs [& dirs]
   (reset! *state (first-scan {:dirs dirs})))
+
+(defn exclude [& nses]
+  (swap! *state update :exclude intos (set nses)))
 
 (defn ns-unload [ns]
   (when *log-fn*
     (*log-fn* :unload ns))
-  (remove-ns ns)
-  (dosync
-    (alter @#'clojure.core/*loaded-libs* disj ns)))
+  (when (@#'clojure.core/*loaded-libs* ns)
+    (let [ns-obj (find-ns ns)]
+      (remove-ns ns)
+      (dosync
+        (alter @#'clojure.core/*loaded-libs* disj ns)))))
 
 (defn ns-load [ns]
   (when *log-fn*
@@ -244,15 +250,20 @@
   ([state]
    (let [state         (scan state)
          changed-files (:changed state)
+         included?     #(not (contains? (:exclude state) %))
+         
          changed-nses  (for [[_ {nses :namespaces}] changed-files
-                             [ns _] nses]
+                             [ns _] nses
+                             :when (included? ns)]
                          ns)
-         _             (doseq [ns (reverse (sorted-dependees state changed-nses))]
+         _             (doseq [ns (reverse (sorted-dependees state changed-nses))
+                               :when (included? ns)]
                          (ns-unload ns))
          state'        (-> state
                          (update :files merge (:files state) changed-files)
                          (assoc :changed {}))
-         _             (doseq [ns (sorted-dependees state' changed-nses)]
+         _             (doseq [ns (sorted-dependees state' changed-nses)
+                               :when (included? ns)]
                          (ns-load ns))]
      state')))
 

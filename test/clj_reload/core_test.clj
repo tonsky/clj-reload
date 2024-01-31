@@ -113,6 +113,10 @@ Unexpected :require form: [789 a b c]
   (is (= '[:unload l i j k h f a d c e :load e c d a f h k j i l] (modify 'e 'k 'l)))
   (is (= '[:unload l i j k h f g a d c e b :load b e c d a g f h k j i l] (modify 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l))))
 
+(deftest exclude-test
+  ;; TODO
+  )
+
 (comment
   (modify 'a 'b))
 
