@@ -72,14 +72,22 @@ Unexpected :require form: [789 a b c]
         _      (doseq [^File file (next (file-seq (io/file "fixtures")))]
                  (when (> (.lastModified file) now)
                    (.setLastModified file now)))
-        state  #p (clj-reload/first-scan ["fixtures"])
+        state  (clj-reload/first-scan {:dirs ["fixtures"]})
         now    (+ now 2000)
         _      (doseq [sym syms
                        :let [file (io/file "fixtures" (str sym ".clj"))]]
                  (.setLastModified ^File file now))
         *track (atom [])
-        state' (binding [clj-reload/*log-fn* #(swap! *track conj (vec %&))]
-                 (clj-reload/reload #p (clj-reload/scan #p state)))]
+        log-fn (fn [op ns]
+                 (swap! *track
+                   (fn [track]
+                     (let [last-op (->> track (filter keyword?) last)]
+                       (cond-> track
+                         (not= op last-op) (conj op)
+                         true              (conj ns))))))
+        state' (binding [clj-reload/*log-fn* log-fn
+                         clj-reload/*stable?* true]
+                 (clj-reload/reload state))]
     @*track))
 
 ;    a     f     i  l 
@@ -89,8 +97,21 @@ Unexpected :require form: [789 a b c]
 ;       e        k    
 
 (deftest reload-test
-  (is (= [[:unload 'a] [:load 'a]] (modify 'a)))
-  (is (= [[:unload 'a] [:unload 'b] [:load 'b] [:load 'a]] (modify 'b))))
+  (is (= '[:unload a :load a] (modify 'a)))
+  (is (= '[:unload a b :load b a] (modify 'b)))
+  (is (= '[:unload a c :load c a] (modify 'c)))
+  (is (= '[:unload f a d :load d a f] (modify 'd)))
+  (is (= '[:unload h f a d c e :load e c d a f h] (modify 'e)))
+  (is (= '[:unload f :load f] (modify 'f)))
+  (is (= '[:unload f g :load g f] (modify 'g)))
+  (is (= '[:unload i :load i] (modify 'i)))
+  (is (= '[:unload i j :load j i] (modify 'j)))
+  (is (= '[:unload i j k :load k j i] (modify 'k)))
+  (is (= '[:unload l :load l] (modify 'l)))
+  (is (= '[] (modify)))
+  (is (= '[:unload a c b :load b c a] (modify 'a 'b 'c)))
+  (is (= '[:unload l i j k h f a d c e :load e c d a f h k j i l] (modify 'e 'k 'l)))
+  (is (= '[:unload l i j k h f g a d c e b :load b e c d a g f h k j i l] (modify 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l))))
 
 (comment
   (modify 'a 'b))

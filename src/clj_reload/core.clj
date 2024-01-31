@@ -6,10 +6,51 @@
   (:import
     [java.io File PushbackReader]))
 
+(def ^:dynamic *log-fn*
+  println)
+
+(def ^:dynamic *stable?*
+  false)
+
+; {:dirs    [<string> ...]
+;  :sicne   <long>
+;  :files   {<file> -> File}
+;  :changed {<file> -> File}}
+;
+;  File :: {:modified   <long>
+;           :namespaces {<symbol> -> Namespace}}
+;
+;  Namespace :: {:depends -> #{<symbol> ...}}
+
+(def *state
+  (atom
+    {:files {}}))
+
 (def reader-opts
   {:read-cond :allow
    :features  #{:clj}
    :eof       ::eof})
+
+(defn update! [m k f & args]
+  (assoc! m k (apply f (m k) args)))
+
+(def conjs
+  (fnil conj #{}))
+
+(def intos
+  (fnil into #{}))
+
+(defn last-modified [^File f]
+  (some-> f .lastModified))
+
+(defn file? [^File f]
+  (some-> f .isFile))
+
+(defn file-name [^File f]
+  (some-> f .getName))
+
+(defn reader ^PushbackReader [f]
+  (PushbackReader. (io/reader (io/file f))))
 
 (defn- expand-quotes [form]
   (walk/postwalk
@@ -61,13 +102,15 @@
                    result
           
                    (#{:require :use} tag)
-                   (recur body' (update result :depends (fnil into #{}) (parse-require-form form)))
+                   (recur body' (update result :depends intos (parse-require-form form)))
           
                    :else
                    (recur body' result))))]
     [name body]))
 
-(defn read-file [rdr]
+(defn read-file
+  "Returns {<symbol> -> Namespace}"
+  [rdr]
   (try
     (loop [current-ns nil
            result     {}]
@@ -90,7 +133,7 @@
           (#{'require 'use} tag)
           (let [_    (assert current-ns (str "Unexpected " tag " form outside of ns"))
                 deps (parse-require-form (expand-quotes form))]
-            (recur current-ns (update result current-ns update :depends (fnil into #{}) deps)))
+            (recur current-ns (update result current-ns update :depends intos deps)))
             
           :else
           (recur current-ns result))))
@@ -101,105 +144,110 @@
 (defn find-files [dirs since]
   (->> dirs
     (mapcat #(file-seq (io/file %)))
-    (filter #(.isFile ^File %))
-    (filter #(re-matches #".*\.cljc?" (.getName ^File %)))
-    (filter #(> (.lastModified ^File %) since))))
+    (filter file?)
+    (filter #(re-matches #".*\.cljc?" (file-name %)))
+    (filter #(> (last-modified %) since))))
 
-(def *state
-  (atom
-    {:files {}}))
-
-(defn group [xs key-fn value-fn]
-  (reduce
-    (fn [m x]
-      (update m (key-fn x) (fnil conj #{}) (value-fn x)))
-    {}
-    xs))
-
-(defn flatten-state [state]
-  (for [[file {nses :namespaces}] (:files state)
-        [from {tos :depends}] nses
-        to tos]
-    [from to]))
-
-(defn dependencies [state]
-  (group (flatten-state state) first second))
-
-(defn dependees [state]
-  (group (flatten-state state) second first))
+(defn dependees 
+  "ns -> #{downstream-ns ...}"
+  [state]
+  (let [*m (volatile! (transient {}))]
+    (doseq [[_ {nses :namespaces}] (:files state)
+            [from {tos :depends}] nses]
+      (vswap! *m update! from #(or % #{}))
+      (doseq [to tos]
+        (vswap! *m update! to conjs from)))
+    (persistent! @*m)))
 
 (defn transitive-closure
-  ([deps starts]
-   (transitive-closure deps starts #{}))
-  ([deps queue acc]
-   (if (empty? queue)
-     acc
-     (let [[start & queue'] queue]
-       (if (contains? acc start)
-         (recur deps queue' acc)
-         (recur deps (into queue (deps start)) (conj acc start)))))))
+  "Starts from starts, expands using deps {ns -> #{ns ...}},
+   returns #{ns ...}"
+  [deps starts]
+  (loop [queue starts
+         acc   (transient #{})]
+    (let [[start & queue'] queue]
+      (cond
+        (empty? queue)
+        (persistent! acc)
+      
+        (contains? acc start)
+        (recur queue' acc)
+        
+        :else
+        (recur (into queue (deps start)) (conj! acc start))))))
 
-(defn topo-sort [deps]
-  (loop [res  []
+(defn topo-sort
+  "Topologically sorts dependency map {ns -> #{ns ...}}"
+  [deps]
+  (loop [res  (transient [])
          deps deps]
     (if (empty? deps)
-      res
-      (let [node (some
-                   (fn [node]
-                     (when (every? #(not (% node)) (vals deps))
-                       node))
-                   (keys deps))]
-        (recur (conj res node) (dissoc deps node))))))
+      (persistent! res)
+      (let [root (fn [node]
+                   (when (every? #(not (% node)) (vals deps))
+                     node))
+            node (if *stable?*
+                   (->> (keys deps) (filter root) (sort) (first))
+                   (->> (keys deps) (some root)))]
+        (recur (conj! res node) (dissoc deps node))))))
 
-(defn sorted-dependees [state changed-nses]
-  (let [dependencies (dependencies state)
-        dependees    (dependees state)
-        sorted       (topo-sort dependencies)
-        ns-set       (transitive-closure dependees changed-nses)]
-    (filter ns-set sorted)))
+(defn sorted-dependees
+  "Starting from changed-nses, returns namespaces to load in
+   upstream -> downstream order (load order)"
+  [state changed-nses]
+  (let [dependees (dependees state)
+        ns-set    (transitive-closure dependees changed-nses)
+        sorted    (topo-sort dependees)]
+    (filterv ns-set sorted)))
 
-(defn scan [state]
-  (let [changed-files (find-files (:dirs state) (:since state 0))
-        changed (into {}
-                  (for [^File file changed-files]
-                    [file {:modified   (.lastModified file)
-                           :namespaces (with-open [rdr (java.io.PushbackReader. (io/reader file))]
-                                         (read-file rdr))}]))]
-    (-> state
-      (update :changed merge changed)
-      (assoc :since (System/currentTimeMillis)))))
+(defn scan
+  ([]
+   (swap! *state scan))
+  ([state]
+   (let [changed-files (find-files (:dirs state) (:since state 0))
+         changed (into {}
+                   (for [file changed-files]
+                     [file {:modified   (last-modified file)
+                            :namespaces (with-open [rdr (reader file)]
+                                          (read-file rdr))}]))]
+     (-> state
+       (update :changed merge changed)
+       (assoc :since (System/currentTimeMillis))))))
 
-(defn first-scan [dirs]
-  (let [state (scan {:dirs dirs})]
-    (-> state
-      (assoc :files (:changed state))
-      (assoc :changed {}))))
+(defn first-scan [state]
+  (let [state' (scan state)]
+    (assoc state'
+      :files   (:changed state')
+      :changed {})))
 
-(def ^:dynamic *log-fn*)
+(defn set-dirs [dirs]
+  (reset! *state (first-scan {:dirs dirs})))
 
 (defn ns-unload [ns]
   (when *log-fn*
-    (*log-fn* :unload ns))
-  (println "Unloading" ns))
+    (*log-fn* :unload ns)))
 
 (defn ns-load [ns]
   (when *log-fn*
-    (*log-fn* :load ns))
-  (println "Loading" ns))
+    (*log-fn* :load ns)))
 
-(defn reload [state]
-  (let [changed      (:changed state)
-        changed-nses (for [[file {nses :namespaces}] changed
-                              [ns _] nses]
-                          ns)
-        _            (doseq [ns (sorted-dependees state changed-nses)]
-                       (ns-unload ns))
-        state'       (-> state
-                       (update :files merge (:files state) changed)
-                       (assoc :changed {}))
-        _            (doseq [ns (reverse (sorted-dependees state' changed-nses))]
-                       (ns-load ns))]
-    state'))
+(defn reload
+  ([]
+   (swap! *state reload))
+  ([state]
+   (let [state         (scan state)
+         changed-files (:changed state)
+         changed-nses  (for [[_ {nses :namespaces}] changed-files
+                             [ns _] nses]
+                         ns)
+         _             (doseq [ns (reverse (sorted-dependees state changed-nses))]
+                         (ns-unload ns))
+         state'        (-> state
+                         (update :files merge (:files state) changed-files)
+                         (assoc :changed {}))
+         _             (doseq [ns (sorted-dependees state' changed-nses)]
+                         (ns-load ns))]
+     state')))
 
 (comment
   (dependencies (first-scan ["fixtures"]))
