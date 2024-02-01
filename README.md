@@ -4,19 +4,30 @@ A smarter way to reload code. It tracks namespace dependencies, unloads and then
 
 ## Differences from tools.namespace
 
+Progress:
+
+- [x] Parse namespases
+- [x] Support in-ns
+- [x] Support standalone `require/use`
+- [x] Do not reload everything on first reload
+- [x] Support :no-unload
+- [x] Support :no-load
+- [x] Only reload active namespaces
+- [ ] Handle errors during ns load
+- [ ] Handle errors during ns parse
+- [ ] Handle cyclic dependencies
+- [ ] Handle file is deleted
 - [ ] hooks for unload
-- [ ] track in-ns dependencies
-- [ ] do not reload everything on first reload
-- [ ] only reload active namespaces
 - [ ] keep defonce
 - [ ] keep protocols?
 - [ ] keep multimethods
 - [ ] ^:clj-reload/keep
-- [ ] shorter meta keys
+- [x] shorter meta keys
 - [ ] reload on file change
 - [ ] return list of nses reloaded
-- [ ] aliases?
-- [ ] excludes in set-refresh-dirs
+- [ ] ? Try to keep aliases working
+- [ ] ? Get dependencies from live ns objects
+- [ ] ? Use load to load files, not nses
 
 ## License
 

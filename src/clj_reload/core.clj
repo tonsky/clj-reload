@@ -12,11 +12,12 @@
 (def ^:dynamic *stable?*
   false)
 
-; {:dirs    [<string> ...]
-;  :exclude #{<symbol> ...}
-;  :sicne   <long>
-;  :files   {<file> -> File}
-;  :changed {<file> -> File}}
+; {:dirs      [<string> ...]
+;  :no-unload #{<symbol> ...}
+;  :no-load   #{<symbol> ...}
+;  :sicne     <long>
+;  :files     {<file> -> File}
+;  :loaded    #{<symbol>... }}
 ;
 ;  File :: {:modified   <long>
 ;           :namespaces {<symbol> -> Namespace}}
@@ -24,8 +25,7 @@
 ;  Namespace :: {:depends #{<symbol> ...}}
 
 (def *state
-  (atom
-    {:files {}}))
+  (atom {}))
 
 (def reader-opts
   {:read-cond :allow
@@ -40,6 +40,9 @@
 
 (def intos
   (fnil into #{}))
+
+(defn now []
+  (System/currentTimeMillis))
 
 (defn last-modified [^File f]
   (some-> f .lastModified))
@@ -112,42 +115,38 @@
 (defn read-file
   "Returns {<symbol> -> Namespace}"
   [rdr]
-  (try
-    (loop [current-ns nil
-           result     {}]
-      (let [form (binding [*read-eval* false]
-                   (read reader-opts rdr))
-            tag  (when (list? form)
-                   (first form))]
-        (cond
-          (= ::eof form)
-          result
+  (loop [current-ns nil
+         result     {}]
+    (let [form (binding [*read-eval* false]
+                 (read reader-opts rdr))
+          tag  (when (list? form)
+                 (first form))]
+      (cond
+        (= ::eof form)
+        result
           
-          (= 'ns tag)
-          (let [[name body] (parse-ns-form form)]
-            (recur name (assoc result name body)))
+        (= 'ns tag)
+        (let [[name body] (parse-ns-form form)]
+          (recur name (assoc result name body)))
           
-          (= 'in-ns tag)
-          (let [[_ name] (expand-quotes form)]
-            (recur name result))
+        (= 'in-ns tag)
+        (let [[_ name] (expand-quotes form)]
+          (recur name result))
           
-          (#{'require 'use} tag)
-          (let [_    (assert current-ns (str "Unexpected " tag " form outside of ns"))
-                deps (parse-require-form (expand-quotes form))]
-            (recur current-ns (update result current-ns update :depends intos deps)))
+        (#{'require 'use} tag)
+        (let [_    (assert current-ns (str "Unexpected " tag " form outside of ns"))
+              deps (parse-require-form (expand-quotes form))]
+          (recur current-ns (update result current-ns update :depends intos deps)))
             
-          :else
-          (recur current-ns result))))
-    (catch Exception e
-      (when-not (= :reader-exception (:type (ex-data e)))
-        (throw e)))))
+        :else
+        (recur current-ns result)))))
 
 (defn find-files [dirs since]
   (->> dirs
     (mapcat #(file-seq (io/file %)))
     (filter file?)
     (filter #(re-matches #".*\.cljc?" (file-name %)))
-    (filter #(> (last-modified %) since))))
+    (filter #(> (last-modified %) (or since 0)))))
 
 (defn dependees 
   "ns -> #{downstream-ns ...}"
@@ -202,70 +201,91 @@
     (filterv ns-set sorted)))
 
 (defn scan
-  ([]
-   (swap! *state scan))
-  ([state]
-   (let [changed-files (find-files (:dirs state) (:since state 0))
-         changed (into {}
-                   (for [file changed-files]
-                     [file {:modified   (last-modified file)
-                            :namespaces (with-open [rdr (reader file)]
-                                          (read-file rdr))}]))]
-     (-> state
-       (update :changed merge changed)
-       (assoc :since (System/currentTimeMillis))))))
+  "Returns {<file> -> File}"
+  [dirs since]
+  (let [changed-files (find-files dirs since)]
+    (into {}
+      (for [file changed-files]
+        [file {:modified (last-modified file)
+               :namespaces
+               (with-open [rdr (reader file)]
+                 (try
+                   (read-file rdr)
+                   (catch Exception e
+                     (printf "Failed to load %s: %s\n" (.getPath ^File file) (.getMessage e)))))}]))))
 
-(defn first-scan [state]
-  (let [state' (scan state)]
-    (assoc state'
-      :files   (:changed state')
-      :changed {})))
+(defn init-impl [opts]
+  (let [dirs  (vec (:dirs opts))
+        now   (now)
+        files (scan dirs 0)]
+    {:dirs      dirs
+     :no-unload (set (:no-unload opts))
+     :no-load   (set (:no-load opts))
+     :files     files
+     :since     now}))
 
-(defn set-dirs [& dirs]
-  (reset! *state (first-scan {:dirs dirs})))
-
-(defn exclude [& nses]
-  (swap! *state update :exclude intos (set nses)))
+(defn init [opts]
+  (reset! *state (init-impl opts)))
 
 (defn ns-unload [ns]
   (when *log-fn*
     (*log-fn* :unload ns))
-  (when (@#'clojure.core/*loaded-libs* ns)
-    (let [ns-obj (find-ns ns)]
-      (remove-ns ns)
-      (dosync
-        (alter @#'clojure.core/*loaded-libs* disj ns)))))
+  (remove-ns ns)
+  (dosync
+    (alter @#'clojure.core/*loaded-libs* disj ns)))
 
 (defn ns-load [ns]
   (when *log-fn*
     (*log-fn* :load ns))
   (try
-    (require ns :reload)
+    (require ns :reload) ;; use load to load?
     (catch Throwable t
       (println t))))
+
+(defn unload-impl [state changed-files]
+  (let [{:keys [loaded no-unload no-load]} state
+        loaded'       (intos loaded @@#'clojure.core/*loaded-libs*)
+        unload?       #(and
+                         (loaded' %)
+                         (not (no-unload %))
+                         (not (no-load %)))
+        changed-nses  (for [[_ {nses :namespaces}] changed-files
+                            [ns _] nses
+                            :when (unload? ns)]
+                        ns)]
+    (doseq [ns (reverse (sorted-dependees state changed-nses))
+            :when (unload? ns)]
+      (ns-unload ns))
+    (assoc state
+      :loaded loaded')))
+
+(defn load-impl [state changed-files now]
+  (let [{:keys [loaded no-load]} state
+        load?         #(and
+                         (loaded %)
+                         (not (no-load %)))
+        changed-nses  (for [[_ {nses :namespaces}] changed-files
+                            [ns _] nses
+                            :when (load? ns)]
+                        ns)]
+    (doseq [ns (sorted-dependees state changed-nses)
+            :when (load? ns)]
+      (ns-load ns))
+    (-> state
+      (update :files merge changed-files)
+      (assoc :since now)
+      (dissoc :loaded))))
 
 (defn reload
   ([]
    (swap! *state reload))
   ([state]
-   (let [state         (scan state)
-         changed-files (:changed state)
-         included?     #(not (contains? (:exclude state) %))
-         
-         changed-nses  (for [[_ {nses :namespaces}] changed-files
-                             [ns _] nses
-                             :when (included? ns)]
-                         ns)
-         _             (doseq [ns (reverse (sorted-dependees state changed-nses))
-                               :when (included? ns)]
-                         (ns-unload ns))
-         state'        (-> state
-                         (update :files merge (:files state) changed-files)
-                         (assoc :changed {}))
-         _             (doseq [ns (sorted-dependees state' changed-nses)
-                               :when (included? ns)]
-                         (ns-load ns))]
-     state')))
+   (let [{:keys [dirs loaded since no-unload no-load]} state
+         now           (now)
+         changed-files (scan dirs since)
+         state'        (unload-impl state changed-files)
+         state''       (load-impl state' changed-files now)]
+     state'')))
 
 (comment
   (dependencies (first-scan ["fixtures"]))
