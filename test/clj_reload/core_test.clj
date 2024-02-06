@@ -66,6 +66,59 @@ Unexpected :require form: [567 :as a]
 Unexpected :require form: [789 a b c]
 " (str out)))))
 
+(def *trace
+  (atom []))
+
+(def *time
+  (atom (System/currentTimeMillis)))
+
+(defn reset []
+  (reset! *trace [])
+  (let [now (System/currentTimeMillis)]
+    (reset! *time now)
+    (doseq [^File file (next (file-seq (io/file "fixtures")))
+            :when (> (.lastModified file) now)]
+      (.setLastModified file now)))
+  (doseq [ns '[l i j k f a g h d c e b]]
+    (when (@@#'clojure.core/*loaded-libs* ns)
+      (remove-ns ns)
+      (dosync
+        (alter @#'clojure.core/*loaded-libs* disj ns)))))
+
+(defn touch [sym]
+  (let [now  (swap! *time + 1000)
+        file (io/file "fixtures" (str sym ".clj"))]
+    (.setLastModified ^File file now)))
+
+(defn doeach [f xs]
+  (doseq [x xs]
+    (f x)))
+
+(defmacro with-changed [sym content' & body]
+  `(let [sym#     ~sym
+         file#    (io/file "fixtures" (str ~sym ".clj"))
+         content# (slurp file#)]
+     (try
+       (spit file# ~content')
+       (touch sym#)
+       ~@body
+       (finally
+         (spit file# content#)
+         (touch sym#)))))
+
+(defn log-fn [op ns]
+  (swap! *trace
+    (fn [track]
+      (let [last-op (->> track (filter keyword?) last)]
+        (cond-> track
+          (not= op last-op) (conj op)
+          true              (conj ns))))))
+
+(defn reload []
+  (binding [reload/*log-fn* log-fn
+            reload/*stable?* true]
+    (reload/reload)))
+
 (defn modify [& syms]
   (let [[opts syms] (if (map? (first syms))
                       [(first syms) (next syms)]
@@ -73,52 +126,18 @@ Unexpected :require form: [789 a b c]
         opts        (merge {:dirs ["fixtures"]}
                       opts)]
     (try
-      (doseq [ns (:require opts '[b e c d h g a f k j i l])]
-        (require ns))
-      (let [now    (System/currentTimeMillis)
-            _      (doseq [^File file (next (file-seq (io/file "fixtures")))]
-                     (when (> (.lastModified file) now)
-                       (.setLastModified file now)))
-            state  (reload/init-impl opts)
-            now    (+ now 2000)
-            _      (doseq [sym syms
-                           :let [file (io/file "fixtures" (str sym ".clj"))]]
-                     (.setLastModified ^File file now))
-            *track (atom [])
-            log-fn (fn [op ns]
-                     (swap! *track
-                       (fn [track]
-                         (let [last-op (->> track (filter keyword?) last)]
-                           (cond-> track
-                             (not= op last-op) (conj op)
-                             true              (conj ns))))))
-            state' (binding [reload/*log-fn* log-fn
-                             reload/*stable?* true]
-                     (reload/reload state))]
-        @*track)
-      (finally
-        (doseq [ns '[l i j k f a g h d c e b]]
-          (when (@@#'clojure.core/*loaded-libs* ns)
-            (remove-ns ns)
-            (dosync
-              (alter @#'clojure.core/*loaded-libs* disj ns))))))))
+      (reset)
+      (doeach require (:require opts '[b e c d h g a f k j i l]))
+      (reload/init opts)
+      (doeach touch syms)
+      (reload)
+      @*trace)))
 
 ;    a     f     i  l 
 ;  / | \ /   \   |    
 ; b  c  d  h  g  j    
 ;     \ | /      |    
 ;       e        k    
-;                     
-; (require a)         
-; (reload/init)
-; ... change e ...
-; ... change d ...
-; (reload/reload)
-; d fails to load
-; we have: e, c alive
-; rest is unloaded
-; ... change d ...
-; (reload/reload)
 
 (deftest reload-test
   (is (= '[:unload a :load a] (modify 'a)))
@@ -141,25 +160,23 @@ Unexpected :require form: [789 a b c]
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e)))
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
 
-; (deftest reload-broken
-;   (require 'a)
-;   (reload/init ...)
-;   (try
-;     ...alter c...
-;     ...touch e...
-;     (is (thrown? (reload/reload)))
-;     (is [:unload a d c e :load e c :error c] track)
-;     ...fix c...
-;     (reload/reload)
-;     (is [:unload c :load c d a] track)
-;     (reload/reload)
-;     (finally
-;       (...restore c...))))
+(deftest reload-broken
+  (reset)
+  (require 'a)
+  (reload/init {:dirs ["fixtures"]})
+  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
+    (touch 'e)
+    (is (thrown? Exception (reload)))
+    (is (= '[:unload a d c e :load e :load-fail c] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload c :load c d a] @*trace)))
 
 (deftest exclude-test
   (is (= '[] (modify {:no-load ['k]} 'k)))
   (is (= '[:unload h f a d e :load e d a f h] (modify {:no-load ['c]} 'e)))
   (is (= '[:unload h f a d e :load e c d a f h] (modify {:no-unload ['c]} 'e))))
 
-; (test/test-ns *ns*)
-; (test/run-test-var #'var)
+(comment
+  (test/test-ns *ns*)
+  (clojure.test/run-test-var #'reload-broken))

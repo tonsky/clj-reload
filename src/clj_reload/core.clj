@@ -15,9 +15,10 @@
 ; {:dirs      [<string> ...]
 ;  :no-unload #{<symbol> ...}
 ;  :no-load   #{<symbol> ...}
-;  :sicne     <long>
+;  :since     <long>
 ;  :files     {<file> -> File}
-;  :loaded    #{<symbol>... }}
+;  :unload    #{<symbol> ...}
+;  :load      #{<symbol> ...}}
 ;
 ;  File :: {:modified   <long>
 ;           :namespaces {<symbol> -> Namespace}}
@@ -150,9 +151,9 @@
 
 (defn dependees 
   "ns -> #{downstream-ns ...}"
-  [state]
+  [files]
   (let [*m (volatile! (transient {}))]
-    (doseq [[_ {nses :namespaces}] (:files state)
+    (doseq [[_ {nses :namespaces}] files
             [from {tos :depends}] nses]
       (vswap! *m update! from #(or % #{}))
       (doseq [to tos]
@@ -160,7 +161,7 @@
     (persistent! @*m)))
 
 (defn transitive-closure
-  "Starts from starts, expands using deps {ns -> #{ns ...}},
+  "Starts from starts, expands using dependees {ns -> #{downsteram-ns ...}},
    returns #{ns ...}"
   [deps starts]
   (loop [queue starts
@@ -176,31 +177,25 @@
         :else
         (recur (into queue (deps start)) (conj! acc start))))))
 
-(defn topo-sort
-  "Topologically sorts dependency map {ns -> #{ns ...}}"
+(defn topo-sort-fn
+  "Accepts dependees map {ns -> #{downsteram-ns ...}},
+   returns a fn that topologically sorts dependencies"
   [deps]
-  (loop [res  (transient [])
-         deps deps]
-    (if (empty? deps)
-      (persistent! res)
-      (let [root (fn [node]
-                   (when (every? #(not (% node)) (vals deps))
-                     node))
-            node (if *stable?*
-                   (->> (keys deps) (filter root) (sort) (first))
-                   (->> (keys deps) (some root)))]
-        (recur (conj! res node) (dissoc deps node))))))
+  (let [sorted (loop [res  (transient [])
+                      deps deps]
+                 (if (empty? deps)
+                   (persistent! res)
+                   (let [root (fn [node]
+                                (when (every? #(not (% node)) (vals deps))
+                                  node))
+                         node (if *stable?*
+                                (->> (keys deps) (filter root) (sort) (first))
+                                (->> (keys deps) (some root)))]
+                     (recur (conj! res node) (dissoc deps node)))))]
+    (fn [coll]
+      (filter (set coll) sorted))))
 
-(defn sorted-dependees
-  "Starting from changed-nses, returns namespaces to load in
-   upstream -> downstream order (load order)"
-  [state changed-nses]
-  (let [dependees (dependees state)
-        ns-set    (transitive-closure dependees changed-nses)
-        sorted    (topo-sort dependees)]
-    (filterv ns-set sorted)))
-
-(defn scan
+(defn changed-files
   "Returns {<file> -> File}"
   [dirs since]
   (let [changed-files (find-files dirs since)]
@@ -217,7 +212,7 @@
 (defn init-impl [opts]
   (let [dirs  (vec (:dirs opts))
         now   (now)
-        files (scan dirs 0)]
+        files (changed-files dirs 0)]
     {:dirs      dirs
      :no-unload (set (:no-unload opts))
      :no-load   (set (:no-load opts))
@@ -227,65 +222,97 @@
 (defn init [opts]
   (reset! *state (init-impl opts)))
 
-(defn ns-unload [ns]
-  (when *log-fn*
-    (*log-fn* :unload ns))
-  (remove-ns ns)
-  (dosync
-    (alter @#'clojure.core/*loaded-libs* disj ns)))
-
-(defn ns-load [ns]
-  (when *log-fn*
-    (*log-fn* :load ns))
-  (try
-    (require ns :reload) ;; use load to load?
-    (catch Throwable t
-      (println t))))
-
-(defn unload-impl [state changed-files]
-  (let [{:keys [loaded no-unload no-load]} state
-        loaded'       (intos loaded @@#'clojure.core/*loaded-libs*)
+(defn scan-impl [state]
+  (let [{:keys [dirs since load unload no-unload no-load files]} state
+        now           (now)
+        changed-files (changed-files dirs since)
+        since'        (->> changed-files
+                        vals
+                        (map :modified)
+                        (reduce max now))
+        changed-nses  (for [[_ {nses :namespaces}] changed-files
+                            [ns _] nses]
+                        ns)
+        loaded        @@#'clojure.core/*loaded-libs*
+        
         unload?       #(and
-                         (loaded' %)
+                         (loaded %)
                          (not (no-unload %))
                          (not (no-load %)))
-        changed-nses  (for [[_ {nses :namespaces}] changed-files
-                            [ns _] nses
-                            :when (unload? ns)]
-                        ns)]
-    (doseq [ns (reverse (sorted-dependees state changed-nses))
-            :when (unload? ns)]
-      (ns-unload ns))
-    (assoc state
-      :loaded loaded')))
-
-(defn load-impl [state changed-files now]
-  (let [{:keys [loaded no-load]} state
+        dependees     (dependees files)
+        topo-sort     (topo-sort-fn dependees)
+        unload'       (->> changed-nses
+                        (filter unload?)
+                        (transitive-closure dependees)
+                        (filter unload?)
+                        (concat unload)
+                        (topo-sort)
+                        (reverse))
+        
         load?         #(and
                          (loaded %)
                          (not (no-load %)))
-        changed-nses  (for [[_ {nses :namespaces}] changed-files
-                            [ns _] nses
-                            :when (load? ns)]
-                        ns)]
-    (doseq [ns (sorted-dependees state changed-nses)
-            :when (load? ns)]
-      (ns-load ns))
-    (-> state
-      (update :files merge changed-files)
-      (assoc :since now)
-      (dissoc :loaded))))
+        files'        (merge files changed-files)
+        dependees'    (clj-reload.core/dependees files')
+        topo-sort'    (topo-sort-fn dependees')
+        load'         (->> changed-nses
+                        (filter load?)
+                        (transitive-closure dependees')
+                        (filter load?)
+                        (concat load)
+                        (topo-sort'))]
+    (assoc state
+      :since  since'
+      :unload unload'
+      :load   load'
+      :files  files')))
 
-(defn reload
-  ([]
-   (swap! *state reload))
-  ([state]
-   (let [{:keys [dirs loaded since no-unload no-load]} state
-         now           (now)
-         changed-files (scan dirs since)
-         state'        (unload-impl state changed-files)
-         state''       (load-impl state' changed-files now)]
-     state'')))
+(defn ns-unload [ns]
+  (try
+    (remove-ns ns)
+    (dosync
+      (alter @#'clojure.core/*loaded-libs* disj ns))
+    (when *log-fn*
+      (*log-fn* :unload ns))
+    (catch Throwable t
+      (when *log-fn*
+        (*log-fn* :unload-fail ns))
+      (throw t))))
+
+(defn unload-impl [state]
+  (let [{:keys [unload]} state]
+    (ns-unload (first unload))
+    (assoc state
+      :unload (next unload))))
+
+(defn ns-load [ns]
+  (try
+    (require ns :reload) ;; use load to load?
+    (when *log-fn*
+      (*log-fn* :load ns))
+    (catch Throwable t
+      (when *log-fn*
+        (*log-fn* :load-fail ns))
+      (throw t))))
+
+(defn load-impl [state]
+  (let [{:keys [load]} state]
+    (ns-load (first load))
+    (assoc state
+      :load (next load))))
+
+(defn reload []
+  (swap! *state scan-impl)
+  (loop [state @*state]
+    (cond
+      (not-empty (:unload state))
+      (recur (swap! *state unload-impl))
+      
+      (not-empty (:load state))
+      (recur (swap! *state load-impl))
+    
+      :else
+      state)))
 
 (comment
   (dependencies (first-scan ["fixtures"]))

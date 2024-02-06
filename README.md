@@ -13,7 +13,8 @@ Progress:
 - [x] Support :no-unload
 - [x] Support :no-load
 - [x] Only reload active namespaces
-- [ ] Handle errors during ns load
+- [ ] Handle errors during ns unload
+- [x] Handle errors during ns load
 - [ ] Handle errors during ns parse
 - [ ] Handle cyclic dependencies
 - [ ] Handle file is deleted
@@ -28,6 +29,7 @@ Progress:
 - [ ] ? Try to keep aliases working
 - [ ] ? Get dependencies from live ns objects
 - [ ] ? Use load to load files, not nses
+- [x] Use LispReader instead of tools.reader
 
 ## License
 
