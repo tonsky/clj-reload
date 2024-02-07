@@ -10,27 +10,25 @@ Progress:
 - [x] Support in-ns
 - [x] Support standalone `require/use`
 - [x] Do not reload everything on first reload
+- [x] Use LispReader instead of tools.reader
+- [x] Support :no-reload
 - [x] Support :no-unload
-- [x] Support :no-load
 - [x] Only reload active namespaces
-- [ ] Handle errors during ns unload
 - [x] Handle errors during ns load
 - [x] Handle errors during ns parse
 - [x] Handle cyclic dependencies
 - [x] Handle file deletion
 - [x] Handle dependency graph changed
-- [ ] hooks for unload
+- [x] Unload hooks
+- [ ] Return list of nses reloaded
 - [ ] keep defonce
 - [ ] keep protocols?
 - [ ] keep multimethods
 - [ ] ^:clj-reload/keep
-- [x] shorter meta keys
 - [ ] reload on file change
-- [ ] return list of nses reloaded
 - [ ] ? Try to keep aliases working
 - [ ] ? Get dependencies from live ns objects
 - [ ] ? Use load to load files, not nses
-- [x] Use LispReader instead of tools.reader
 
 ## License
 

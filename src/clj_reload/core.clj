@@ -12,13 +12,16 @@
 (def ^:dynamic *stable?*
   false)
 
-; {:dirs      [<string> ...]
-;  :no-unload #{<symbol> ...}
-;  :no-load   #{<symbol> ...}
-;  :since     <long>
-;  :files     {<file> -> File}
-;  :unload    #{<symbol> ...}
-;  :load      #{<symbol> ...}}
+; {:dirs        [<string> ...]    - where to look for files
+;  :no-unload   #{<symbol> ...}   - list of namespaces to skip unload
+;  :no-reload   #{<symbol> ...}   - list of namespaces to skip reload
+;  :unload-hook <symbol>          - if function with this name exists in ns,
+;                                   it will be called before unloading.
+;                                   default: on-ns-unload
+;  :since       <long>            - last time list of files was scanned
+;  :files       {<file> -> File}  - files to namespace
+;  :unload      #{<symbol> ...}   - list of namespaces pending unload
+;  :load        #{<symbol> ...}}  - list of namespaces pending load
 ;
 ;  File :: {:modified   <long>
 ;           :namespaces {<symbol> -> Namespace}}
@@ -235,17 +238,18 @@
   (let [dirs  (vec (:dirs opts))
         now   (now)
         files (changed-files nil dirs 0)]
-    {:dirs      dirs
-     :no-unload (set (:no-unload opts))
-     :no-load   (set (:no-load opts))
-     :files     files
-     :since     now}))
+    {:dirs        dirs
+     :no-unload   (set (:no-unload opts))
+     :no-reload   (set (:no-reload opts))
+     :unload-hook (:unload-hook opts 'on-ns-unload)
+     :files       files
+     :since       now}))
 
 (defn init [opts]
   (reset! *state (init-impl opts)))
 
 (defn scan-impl [state]
-  (let [{:keys [dirs since load unload no-unload no-load files]} state
+  (let [{:keys [dirs since to-load to-unload no-unload no-reload files]} state
         now           (now)
         changed-files (changed-files files dirs since)
         since'        (->> changed-files
@@ -261,56 +265,60 @@
         unload?       #(and
                          (loaded %)
                          (not (no-unload %))
-                         (not (no-load %)))
+                         (not (no-reload %)))
         dependees     (dependees files)
         topo-sort     (topo-sort-fn dependees) 
-        unload'       (->> changed-nses
+        to-unload'    (->> changed-nses
                         (filter unload?)
                         (transitive-closure dependees)
                         (filter unload?)
-                        (concat unload)
+                        (concat to-unload)
                         (topo-sort)
                         (reverse))
         
         load?         #(and
                          (loaded %)
-                         (not (no-load %)))
+                         (not (no-reload %)))
         files'        (merge files changed-files)
         changed-nses  (for [[_ {nses :namespaces}] changed-files
                             [ns _] nses]
                         ns)
         dependees'    (clj-reload.core/dependees files')
         topo-sort'    (topo-sort-fn dependees')
-        load'         (->> changed-nses
+        to-load'      (->> changed-nses
                         (filter load?)
                         (transitive-closure dependees')
                         (filter load?)
-                        (concat load)
+                        (concat to-load)
                         (topo-sort'))]
     (assoc state
-      :since  since'
-      :unload unload'
-      :load   load'
-      :files  files')))
+      :since     since'
+      :to-unload to-unload'
+      :to-load   to-load'
+      :files     files')))
 
-(defn ns-unload [ns]
+(defn ns-unload [ns unload-hook]
   (try
-    (remove-ns ns)
-    (dosync
-      (alter @#'clojure.core/*loaded-libs* disj ns))
-    (when *log-fn*
-      (*log-fn* :unload ns))
+    (when unload-hook
+      (when-some [ns-obj (find-ns ns)]
+        (when-some [unload-fn (ns-resolve ns-obj unload-hook)]
+          (unload-fn))))
     (catch Throwable t
-      (when *log-fn*
-        (*log-fn* :unload-fail ns t))
-      ; (println t)
-      (throw t))))
+      ;; eat up unload error
+      ;; if we can’t unload there’s no way to fix that
+      ;; because any changes would require reload first
+      (println t)))
+  (remove-ns ns)
+  (dosync
+    (alter @#'clojure.core/*loaded-libs* disj ns))
+  (when *log-fn*
+    (*log-fn* :unload ns)))
 
 (defn unload-impl [state]
-  (let [{:keys [unload]} state]
-    (ns-unload (first unload))
+  (let [{:keys [to-unload unload-hook]} state]
+    (ns-unload (first to-unload) unload-hook)
     (assoc state
-      :unload (next unload))))
+      :to-unload (next to-unload))))
 
 (defn ns-load [ns]
   (try
@@ -324,19 +332,19 @@
       (throw t))))
 
 (defn load-impl [state]
-  (let [{:keys [load]} state]
-    (ns-load (first load))
+  (let [{:keys [to-load]} state]
+    (ns-load (first to-load))
     (assoc state
-      :load (next load))))
+      :to-load (next to-load))))
 
 (defn reload []
   (swap! *state scan-impl)
   (loop [state @*state]
     (cond
-      (not-empty (:unload state))
+      (not-empty (:to-unload state))
       (recur (swap! *state unload-impl))
       
-      (not-empty (:load state))
+      (not-empty (:to-load state))
       (recur (swap! *state load-impl))
     
       :else

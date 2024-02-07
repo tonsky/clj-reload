@@ -79,7 +79,7 @@ Unexpected :require form: [789 a b c]
     (doseq [^File file (next (file-seq (io/file "fixtures")))
             :when (> (.lastModified file) now)]
       (.setLastModified file now)))
-  (doseq [ns '[l i j k f a g h d c e b]]
+  (doseq [ns '[o n m l i j k f a g h d c e b]]
     (when (@@#'clojure.core/*loaded-libs* ns)
       (remove-ns ns)
       (dosync
@@ -125,6 +125,15 @@ Unexpected :require form: [789 a b c]
           (not= op last-op) (conj op)
           true              (conj ns))))))
 
+(defn init
+  ([]
+   (init nil))
+  ([opts]
+   (reload/init
+     (merge
+       {:dirs ["fixtures"]}
+       opts))))
+
 (defn reload []
   (binding [reload/*log-fn* log-fn
             reload/*stable?* true]
@@ -133,43 +142,48 @@ Unexpected :require form: [789 a b c]
 (defn modify [& syms]
   (let [[opts syms] (if (map? (first syms))
                       [(first syms) (next syms)]
-                      [nil syms])
-        opts        (merge {:dirs ["fixtures"]}
-                      opts)]
+                      [nil syms])]
     (try
       (reset)
-      (doeach require (:require opts '[b e c d h g a f k j i l]))
-      (reload/init opts)
+      (doeach require (:require opts))
+      (init opts)
       (doeach touch syms)
       (reload)
       @*trace)))
 
-;    a     f     i  l 
-;  / | \ /   \   |    
-; b  c  d  h  g  j    
-;     \ | /      |    
-;       e        k    
+;    a     f     i  l  m
+;  / | \ /   \   |     |
+; b  c  d  h  g  j     n
+;     \ | /      |     |
+;       e        k     o
 
 (deftest reload-test
-  (is (= '[:unload a :load a] (modify 'a)))
-  (is (= '[:unload a b :load b a] (modify 'b)))
-  (is (= '[:unload a c :load c a] (modify 'c)))
-  (is (= '[:unload f a d :load d a f] (modify 'd)))
-  (is (= '[:unload h f a d c e :load e c d a f h] (modify 'e)))
-  (is (= '[:unload f :load f] (modify 'f)))
-  (is (= '[:unload f g :load g f] (modify 'g)))
-  (is (= '[:unload i :load i] (modify 'i)))
-  (is (= '[:unload i j :load j i] (modify 'j)))
-  (is (= '[:unload i j k :load k j i] (modify 'k)))
-  (is (= '[:unload l :load l] (modify 'l)))
-  (is (= '[] (modify)))
-  (is (= '[:unload a c b :load b c a] (modify 'a 'b 'c)))
-  (is (= '[:unload l i j k h f a d c e :load e c d a f h k j i l] (modify 'e 'k 'l)))
-  (is (= '[:unload l i j k h f g a d c e b :load b e c d a g f h k j i l] (modify 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l))))
+  (let [opts {:require '[b e c d h g a f k j i l]}]
+    (is (= '[:unload a :load a] (modify opts 'a)))
+    (is (= '[:unload a b :load b a] (modify opts 'b)))
+    (is (= '[:unload a c :load c a] (modify opts 'c)))
+    (is (= '[:unload f a d :load d a f] (modify opts 'd)))
+    (is (= '[:unload h f a d c e :load e c d a f h] (modify opts 'e)))
+    (is (= '[:unload f :load f] (modify opts 'f)))
+    (is (= '[:unload f g :load g f] (modify opts 'g)))
+    (is (= '[:unload i :load i] (modify opts 'i)))
+    (is (= '[:unload i j :load j i] (modify opts 'j)))
+    (is (= '[:unload i j k :load k j i] (modify opts 'k)))
+    (is (= '[:unload l :load l] (modify opts 'l)))
+    (is (= '[] (modify opts)))
+    (is (= '[:unload a c b :load b c a] (modify opts 'a 'b 'c)))
+    (is (= '[:unload l i j k h f a d c e :load e c d a f h k j i l] (modify opts 'e 'k 'l)))
+    (is (= '[:unload l i j k h f g a d c e b :load b e c d a g f h k j i l] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
 
 (deftest reload-active-test
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e)))
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
+
+(deftest exclude-test
+  (let [opts {:require '[b e c d h g a f k j i l]}]
+    (is (= '[] (modify (assoc opts :no-reload ['k]) 'k)))
+    (is (= '[:unload h f a d e :load e d a f h] (modify (assoc opts :no-reload ['c]) 'e)))
+    (is (= '[:unload h f a d e :load e c d a f h] (modify (assoc opts :no-unload ['c]) 'e)))))
 
 (deftest reload-broken-test
   (doseq [[name body trace1 trace2]
@@ -190,7 +204,7 @@ Unexpected :require form: [789 a b c]
     (testing name
       (reset)
       (require 'a)
-      (reload/init {:dirs ["fixtures"]})
+      (init)
       (with-changed 'c body
         (touch 'e)
         (is (thrown? Exception (reload)))
@@ -202,7 +216,7 @@ Unexpected :require form: [789 a b c]
 (deftest reload-changed-test
   (reset)
   (require 'i)
-  (reload/init {:dirs ["fixtures"]})
+  (init)
   (with-changed 'i "(ns i)"
     (with-changed 'j "(ns j (:require i))"
       (with-changed 'k "(ns k (:require j))"
@@ -215,7 +229,7 @@ Unexpected :require form: [789 a b c]
 (deftest reload-deleted-test
   (reset)
   (require 'l)
-  (reload/init {:dirs ["fixtures"]})
+  (init)
   (with-deleted 'l
     (reload)
     (is (= '[:unload l] @*trace))))
@@ -223,7 +237,7 @@ Unexpected :require form: [789 a b c]
 (deftest reload-deleted-2-test
   (reset)
   (require 'i)
-  (reload/init {:dirs ["fixtures"]})
+  (init)
   (with-changed 'j "(ns j)"
     (with-deleted 'k
       (reload)
@@ -235,7 +249,7 @@ Unexpected :require form: [789 a b c]
 (deftest cycle-self-test
   (reset)
   (require 'l)
-  (reload/init {:dirs ["fixtures"]})
+  (init)
   (with-changed 'l "(ns l (:require l))"
     (is (thrown-with-msg? Exception #"Cycle detected: l" (reload)))
     (is (= '[] @*trace)))
@@ -246,7 +260,7 @@ Unexpected :require form: [789 a b c]
 (deftest cycle-one-hop-test
   (reset)
   (require 'i)
-  (reload/init {:dirs ["fixtures"]})
+  (init)
   (with-changed 'j "(ns j (:require i))"
     (is (thrown-with-msg? Exception #"Cycle detected: i, j" (reload)))
     (is (= '[] @*trace)))
@@ -257,7 +271,7 @@ Unexpected :require form: [789 a b c]
 (deftest cycle-two-hops-test
   (reset)
   (require 'i)
-  (reload/init {:dirs ["fixtures"]})
+  (init)
   (with-changed 'k "(ns k (:require i))"
     (is (thrown-with-msg? Exception #"Cycle detected: i, j, k" (reload)))
     (is (= '[] @*trace)))
@@ -268,7 +282,7 @@ Unexpected :require form: [789 a b c]
 (deftest cycle-extra-nodes-test
   (reset)
   (require 'a 'f 'h)
-  (reload/init {:dirs ["fixtures"]})
+  (init)
   (with-changed 'e "(ns e (:require h))"
     (is (thrown-with-msg? Exception #"Cycle detected: e, h" (reload)))
     (is (= '[] @*trace)))
@@ -276,10 +290,24 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '[:unload h f a d c e :load e c d a f h] @*trace)))
 
-(deftest exclude-test
-  (is (= '[] (modify {:no-load ['k]} 'k)))
-  (is (= '[:unload h f a d e :load e d a f h] (modify {:no-load ['c]} 'e)))
-  (is (= '[:unload h f a d e :load e c d a f h] (modify {:no-unload ['c]} 'e))))
+(deftest unload-hook-test
+  (reset)
+  (is (= '[:unload m n :load n m] (modify {:require '[o n m]} 'n)))
+  (is (= [:unload-m :unload-n] @@(resolve 'o/*atom))))
+
+(deftest unload-hook-fail
+  (reset)
+  (with-changed 'm "(ns m (:require n o))
+                    (defn on-ns-unload []
+                      (/ 1 0))"
+    (init)
+    (require 'm)
+    (touch 'm)
+    (reload)
+    (is (= '[:unload m :load m] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload m :load m] @*trace)))
 
 (comment
   (test/test-ns *ns*)
