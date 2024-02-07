@@ -20,7 +20,7 @@ Progress:
 - [x] Handle file deletion
 - [x] Handle dependency graph changed
 - [x] Unload hooks
-- [ ] Return list of nses reloaded
+- [x] Return list of nses reloaded
 - [ ] keep defonce
 - [ ] keep protocols?
 - [ ] keep multimethods

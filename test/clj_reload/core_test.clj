@@ -139,6 +139,11 @@ Unexpected :require form: [789 a b c]
             reload/*stable?* true]
     (reload/reload)))
 
+(defn reload-safe []
+  (binding [reload/*log-fn* log-fn
+            reload/*stable?* true]
+    (reload/reload-safe)))
+
 (defn modify [& syms]
   (let [[opts syms] (if (map? (first syms))
                       [(first syms) (next syms)]
@@ -174,6 +179,45 @@ Unexpected :require form: [789 a b c]
     (is (= '[:unload a c b :load b c a] (modify opts 'a 'b 'c)))
     (is (= '[:unload l i j k h f a d c e :load e c d a f h k j i l] (modify opts 'e 'k 'l)))
     (is (= '[:unload l i j k h f g a d c e b :load b e c d a g f h k j i l] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
+
+(deftest return-value-ok-test
+  (reset)
+  (require 'a 'f 'h)
+  (init)
+  (is (= {:unloaded '[]
+          :loaded   '[]} (reload)))
+  (touch 'e)
+  (is (= {:unloaded '[h f a d c e]
+          :loaded   '[e c d a f h]} (reload))))
+
+(deftest return-value-fail-test
+  (reset)
+  (require 'a 'f 'h)
+  (init)
+  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
+    (touch 'e)
+    (try
+      (reload)
+      (is (= "Should throw" "Didn't throw"))
+      (catch Exception e
+        (is (= {:unloaded '[h f a d c e]
+                :loaded   '[e]
+                :failed   'c} (ex-data e))))))
+  (is (= {:unloaded '[c]
+          :loaded   '[c d a f h]} (reload))))
+
+(deftest return-value-fail-safe-test
+  (reset)
+  (require 'a 'f 'h)
+  (init)
+  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
+    (touch 'e)
+    (let [res (reload-safe)]
+      (is (= {:unloaded '[h f a d c e]
+              :loaded   '[e]
+              :failed   'c} (dissoc res :exception)))))
+  (is (= {:unloaded '[c]
+          :loaded   '[c d a f h]} (reload))))
 
 (deftest reload-active-test
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e)))

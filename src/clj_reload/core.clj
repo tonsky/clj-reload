@@ -13,16 +13,17 @@
   false)
 
 ; {:dirs        [<string> ...]    - where to look for files
-;  :no-unload   #{<symbol> ...}   - list of namespaces to skip unload
-;  :no-reload   #{<symbol> ...}   - list of namespaces to skip reload
+;  :no-unload   #{<symbol> ...}   - list of nses to skip unload
+;  :no-reload   #{<symbol> ...}   - list of nses to skip reload
 ;  :unload-hook <symbol>          - if function with this name exists in ns,
 ;                                   it will be called before unloading.
 ;                                   default: on-ns-unload
 ;  :since       <long>            - last time list of files was scanned
-;  :files       {<file> -> File}  - files to namespace
-;  :unload      #{<symbol> ...}   - list of namespaces pending unload
-;  :load        #{<symbol> ...}}  - list of namespaces pending load
-;
+;  :files       {<file> -> File}  - files to ns
+;  :to-unload   #{<symbol> ...}   - list of nses pending unload
+;  :to-load     #{<symbol> ...}   - list of nses pending load
+; }
+; 
 ;  File :: {:modified   <long>
 ;           :namespaces {<symbol> -> Namespace}}
 ;
@@ -314,41 +315,49 @@
   (when *log-fn*
     (*log-fn* :unload ns)))
 
-(defn unload-impl [state]
-  (let [{:keys [to-unload unload-hook]} state]
-    (ns-unload (first to-unload) unload-hook)
-    (assoc state
-      :to-unload (next to-unload))))
-
 (defn ns-load [ns]
   (try
     (require ns :reload) ;; use load to load?
     (when *log-fn*
       (*log-fn* :load ns))
+    nil
     (catch Throwable t
       (when *log-fn*
         (*log-fn* :load-fail ns t))
       ; (println t)
-      (throw t))))
+      t)))
 
-(defn load-impl [state]
-  (let [{:keys [to-load]} state]
-    (ns-load (first to-load))
-    (assoc state
-      :to-load (next to-load))))
-
-(defn reload []
+(defn reload-safe []
   (swap! *state scan-impl)
-  (loop [state @*state]
+  (loop [unloaded []
+         loaded   []
+         state    @*state]
     (cond
       (not-empty (:to-unload state))
-      (recur (swap! *state unload-impl))
+      (let [[ns & to-unload'] (:to-unload state)
+            _                 (ns-unload ns (:unload-hook state))
+            state'            (swap! *state assoc :to-unload to-unload')]
+        (recur (conj unloaded ns) loaded state'))
       
       (not-empty (:to-load state))
-      (recur (swap! *state load-impl))
+      (let [[ns & to-load'] (:to-load state)]
+        (if-some [ex (ns-load ns)]
+          {:unloaded  unloaded
+           :loaded    loaded
+           :failed    ns
+           :exception ex}
+          (let [state' (swap! *state assoc :to-load to-load')]
+            (recur unloaded (conj loaded ns) state'))))
     
       :else
-      state)))
+      {:unloaded unloaded
+       :loaded   loaded})))
+
+(defn reload []
+  (let [res (reload-safe)]
+    (if-some [exception (:exception res)]
+      (throw (ex-info (str "Failed to load namespace: " (:failed res)) (dissoc res :exception) exception))
+      res)))
 
 (comment
   (dependencies (first-scan ["fixtures"]))
