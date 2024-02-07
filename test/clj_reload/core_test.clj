@@ -167,11 +167,11 @@ Unexpected :require form: [789 a b c]
   (is (= '[:unload l i j k h f a d c e :load e c d a f h k j i l] (modify 'e 'k 'l)))
   (is (= '[:unload l i j k h f g a d c e b :load b e c d a g f h k j i l] (modify 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l))))
 
-(deftest reload-active
+(deftest reload-active-test
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e)))
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
 
-(deftest reload-broken
+(deftest reload-broken-test
   (doseq [[name body trace1 trace2]
           [["exception"
             "(ns c (:require e)) (/ 1 0)"
@@ -199,7 +199,7 @@ Unexpected :require form: [789 a b c]
       (reload)
       (is (= trace2 @*trace)))))
 
-(deftest reload-changed
+(deftest reload-changed-test
   (reset)
   (require 'i)
   (reload/init {:dirs ["fixtures"]})
@@ -212,7 +212,7 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '[:unload k j i :load k j i] @*trace)))
 
-(deftest reload-deleted
+(deftest reload-deleted-test
   (reset)
   (require 'l)
   (reload/init {:dirs ["fixtures"]})
@@ -220,7 +220,7 @@ Unexpected :require form: [789 a b c]
     (reload)
     (is (= '[:unload l] @*trace))))
 
-(deftest reload-deleted-2
+(deftest reload-deleted-2-test
   (reset)
   (require 'i)
   (reload/init {:dirs ["fixtures"]})
@@ -231,6 +231,50 @@ Unexpected :require form: [789 a b c]
   (reset! *trace [])
   (reload)
   (is (= '[:unload i j :load j i] @*trace)))
+
+(deftest cycle-self-test
+  (reset)
+  (require 'l)
+  (reload/init {:dirs ["fixtures"]})
+  (with-changed 'l "(ns l (:require l))"
+    (is (thrown-with-msg? Exception #"Cycle detected: l" (reload)))
+    (is (= '[] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload l :load l] @*trace)))
+
+(deftest cycle-one-hop-test
+  (reset)
+  (require 'i)
+  (reload/init {:dirs ["fixtures"]})
+  (with-changed 'j "(ns j (:require i))"
+    (is (thrown-with-msg? Exception #"Cycle detected: i, j" (reload)))
+    (is (= '[] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload i j :load j i] @*trace)))
+
+(deftest cycle-two-hops-test
+  (reset)
+  (require 'i)
+  (reload/init {:dirs ["fixtures"]})
+  (with-changed 'k "(ns k (:require i))"
+    (is (thrown-with-msg? Exception #"Cycle detected: i, j, k" (reload)))
+    (is (= '[] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload i j k :load k j i] @*trace)))
+
+(deftest cycle-extra-nodes-test
+  (reset)
+  (require 'a 'f 'h)
+  (reload/init {:dirs ["fixtures"]})
+  (with-changed 'e "(ns e (:require h))"
+    (is (thrown-with-msg? Exception #"Cycle detected: e, h" (reload)))
+    (is (= '[] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload h f a d c e :load e c d a f h] @*trace)))
 
 (deftest exclude-test
   (is (= '[] (modify {:no-load ['k]} 'k)))

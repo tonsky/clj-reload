@@ -16,7 +16,7 @@ Progress:
 - [ ] Handle errors during ns unload
 - [x] Handle errors during ns load
 - [x] Handle errors during ns parse
-- [ ] Handle cyclic dependencies
+- [x] Handle cyclic dependencies
 - [x] Handle file deletion
 - [x] Handle dependency graph changed
 - [ ] hooks for unload

@@ -170,21 +170,42 @@
         :else
         (recur (into queue (deps start)) (conj! acc start))))))
 
+(declare topo-sort)
+
+(defn report-cycle [deps]
+  (let [circular (filterv
+                   (fn [node]
+                     (try
+                       (topo-sort (dissoc deps node) (fn [_] (throw (ex-info "Part of cycle" {}))))
+                       true
+                       (catch Exception e
+                         false)))
+                   (keys deps))]
+    (throw (ex-info (str "Cycle detected: " (str/join ", " (sort circular))) {:nodes circular}))))
+
+(defn topo-sort
+  ([deps]
+   (topo-sort deps report-cycle))
+  ([deps on-cycle]
+   (loop [res  (transient [])
+          deps deps]
+     (if (empty? deps)
+       (persistent! res)
+       (let [root (fn [node]
+                    (when (every? #(not (% node)) (vals deps))
+                      node))
+             node (if *stable?*
+                    (->> (keys deps) (filter root) (sort) (first))
+                    (->> (keys deps) (some root)))]
+         (if node
+           (recur (conj! res node) (dissoc deps node))
+           (on-cycle deps)))))))
+
 (defn topo-sort-fn
   "Accepts dependees map {ns -> #{downsteram-ns ...}},
    returns a fn that topologically sorts dependencies"
   [deps]
-  (let [sorted (loop [res  (transient [])
-                      deps deps]
-                 (if (empty? deps)
-                   (persistent! res)
-                   (let [root (fn [node]
-                                (when (every? #(not (% node)) (vals deps))
-                                  node))
-                         node (if *stable?*
-                                (->> (keys deps) (filter root) (sort) (first))
-                                (->> (keys deps) (some root)))]
-                     (recur (conj! res node) (dissoc deps node)))))]
+  (let [sorted (topo-sort deps)]
     (fn [coll]
       (filter (set coll) sorted))))
 
@@ -242,7 +263,7 @@
                          (not (no-unload %))
                          (not (no-load %)))
         dependees     (dependees files)
-        topo-sort     (topo-sort-fn dependees)
+        topo-sort     (topo-sort-fn dependees) 
         unload'       (->> changed-nses
                         (filter unload?)
                         (transitive-closure dependees)
