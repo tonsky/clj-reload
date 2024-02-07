@@ -142,13 +142,6 @@
         :else
         (recur current-ns result)))))
 
-(defn find-files [dirs since]
-  (->> dirs
-    (mapcat #(file-seq (io/file %)))
-    (filter file?)
-    (filter #(re-matches #".*\.cljc?" (file-name %)))
-    (filter #(> (last-modified %) (or since 0)))))
-
 (defn dependees 
   "ns -> #{downstream-ns ...}"
   [files]
@@ -197,22 +190,30 @@
 
 (defn changed-files
   "Returns {<file> -> File}"
-  [dirs since]
-  (let [changed-files (find-files dirs since)]
+  [before dirs since]
+  (let [all     (->> dirs
+                  (mapcat #(file-seq (io/file %)))
+                  (filter file?)
+                  (filter #(re-matches #".*\.cljc?" (file-name %))))
+        updated (filter #(> (last-modified %) (or since 0)) all)
+        deleted (remove (set all) (keys before))]
     (into {}
-      (for [file changed-files]
-        [file {:modified (last-modified file)
-               :namespaces
-               (with-open [rdr (reader file)]
-                 (try
-                   (read-file rdr)
-                   (catch Exception e
-                     (printf "Failed to load %s: %s\n" (.getPath ^File file) (.getMessage e)))))}]))))
+      (concat
+        (for [file updated]
+          [file {:modified (last-modified file)
+                 :namespaces
+                 (with-open [rdr (reader file)]
+                   (try
+                     (read-file rdr)
+                     (catch Exception e
+                       #_(printf "Failed to load %s: %s\n" (.getPath ^File file) (.getMessage e)))))}])
+        (for [file deleted]
+          [file {:modified (now)}])))))
 
 (defn init-impl [opts]
   (let [dirs  (vec (:dirs opts))
         now   (now)
-        files (changed-files dirs 0)]
+        files (changed-files nil dirs 0)]
     {:dirs      dirs
      :no-unload (set (:no-unload opts))
      :no-load   (set (:no-load opts))
@@ -225,16 +226,17 @@
 (defn scan-impl [state]
   (let [{:keys [dirs since load unload no-unload no-load files]} state
         now           (now)
-        changed-files (changed-files dirs since)
+        changed-files (changed-files files dirs since)
         since'        (->> changed-files
                         vals
                         (map :modified)
                         (reduce max now))
-        changed-nses  (for [[_ {nses :namespaces}] changed-files
-                            [ns _] nses]
-                        ns)
         loaded        @@#'clojure.core/*loaded-libs*
         
+        changed-nses  (for [[file _] changed-files
+                            :let [{nses :namespaces} (get files file)]
+                            [ns _] nses]
+                        ns)
         unload?       #(and
                          (loaded %)
                          (not (no-unload %))
@@ -253,6 +255,9 @@
                          (loaded %)
                          (not (no-load %)))
         files'        (merge files changed-files)
+        changed-nses  (for [[_ {nses :namespaces}] changed-files
+                            [ns _] nses]
+                        ns)
         dependees'    (clj-reload.core/dependees files')
         topo-sort'    (topo-sort-fn dependees')
         load'         (->> changed-nses
@@ -276,7 +281,8 @@
       (*log-fn* :unload ns))
     (catch Throwable t
       (when *log-fn*
-        (*log-fn* :unload-fail ns))
+        (*log-fn* :unload-fail ns t))
+      ; (println t)
       (throw t))))
 
 (defn unload-impl [state]
@@ -292,7 +298,8 @@
       (*log-fn* :load ns))
     (catch Throwable t
       (when *log-fn*
-        (*log-fn* :load-fail ns))
+        (*log-fn* :load-fail ns t))
+      ; (println t)
       (throw t))))
 
 (defn load-impl [state]

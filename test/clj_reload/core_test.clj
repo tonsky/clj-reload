@@ -106,7 +106,18 @@ Unexpected :require form: [789 a b c]
          (spit file# content#)
          (touch sym#)))))
 
-(defn log-fn [op ns]
+(defmacro with-deleted [sym & body]
+  `(let [sym#     ~sym
+         file#    (io/file "fixtures" (str ~sym ".clj"))
+         content# (slurp file#)]
+     (try
+       (.delete file#)
+       ~@body
+       (finally
+         (spit file# content#)
+         (touch sym#)))))
+
+(defn log-fn [op ns & _]
   (swap! *trace
     (fn [track]
       (let [last-op (->> track (filter keyword?) last)]
@@ -161,16 +172,65 @@ Unexpected :require form: [789 a b c]
   (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
 
 (deftest reload-broken
+  (doseq [[name body trace1 trace2]
+          [["exception"
+            "(ns c (:require e)) (/ 1 0)"
+            '[:unload a d c e :load e :load-fail c]
+            '[:unload c :load c d a]]
+           
+           ["unknown dep"
+            "(ns c (:require e z))"
+            '[:unload a d c e :load e d :load-fail c]
+            '[:load c a]]
+           
+           ["ill-formed"
+            "(ns c (:require e"
+            '[:unload a d c e :load e d :load-fail a]
+            '[:load a]]]]
+    (testing name
+      (reset)
+      (require 'a)
+      (reload/init {:dirs ["fixtures"]})
+      (with-changed 'c body
+        (touch 'e)
+        (is (thrown? Exception (reload)))
+        (is (= trace1 @*trace)))
+      (reset! *trace [])
+      (reload)
+      (is (= trace2 @*trace)))))
+
+(deftest reload-changed
   (reset)
-  (require 'a)
+  (require 'i)
   (reload/init {:dirs ["fixtures"]})
-  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
-    (touch 'e)
-    (is (thrown? Exception (reload)))
-    (is (= '[:unload a d c e :load e :load-fail c] @*trace)))
+  (with-changed 'i "(ns i)"
+    (with-changed 'j "(ns j (:require i))"
+      (with-changed 'k "(ns k (:require j))"
+        (reload)
+        (is (= '[:unload i j k :load i j k] @*trace)))))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload c :load c d a] @*trace)))
+  (is (= '[:unload k j i :load k j i] @*trace)))
+
+(deftest reload-deleted
+  (reset)
+  (require 'l)
+  (reload/init {:dirs ["fixtures"]})
+  (with-deleted 'l
+    (reload)
+    (is (= '[:unload l] @*trace))))
+
+(deftest reload-deleted-2
+  (reset)
+  (require 'i)
+  (reload/init {:dirs ["fixtures"]})
+  (with-changed 'j "(ns j)"
+    (with-deleted 'k
+      (reload)
+      (is (= '[:unload i j k :load j i] @*trace))))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload i j :load j i] @*trace)))
 
 (deftest exclude-test
   (is (= '[] (modify {:no-load ['k]} 'k)))
@@ -179,4 +239,4 @@ Unexpected :require form: [789 a b c]
 
 (comment
   (test/test-ns *ns*)
-  (clojure.test/run-test-var #'reload-broken))
+  (clojure.test/run-test-var #'reload-deleted))

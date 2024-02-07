@@ -15,9 +15,10 @@ Progress:
 - [x] Only reload active namespaces
 - [ ] Handle errors during ns unload
 - [x] Handle errors during ns load
-- [ ] Handle errors during ns parse
+- [x] Handle errors during ns parse
 - [ ] Handle cyclic dependencies
-- [ ] Handle file is deleted
+- [x] Handle file deletion
+- [x] Handle dependency graph changed
 - [ ] hooks for unload
 - [ ] keep defonce
 - [ ] keep protocols?
