@@ -15,9 +15,12 @@
 ; {:dirs        [<string> ...]    - where to look for files
 ;  :no-unload   #{<symbol> ...}   - list of nses to skip unload
 ;  :no-reload   #{<symbol> ...}   - list of nses to skip reload
+;  :reload-hook <symbol>          - if function with this name exists in ns,
+;                                   it will be called after reloading.
+;                                   default: after-ns-reload
 ;  :unload-hook <symbol>          - if function with this name exists in ns,
 ;                                   it will be called before unloading.
-;                                   default: on-ns-unload
+;                                   default: before-ns-unload
 ;  :since       <long>            - last time list of files was scanned
 ;  :files       {<file> -> File}  - files to ns
 ;  :to-unload   #{<symbol> ...}   - list of nses pending unload
@@ -242,7 +245,8 @@
     {:dirs        dirs
      :no-unload   (set (:no-unload opts))
      :no-reload   (set (:no-reload opts))
-     :unload-hook (:unload-hook opts 'on-ns-unload)
+     :reload-hook (:reload-hook opts 'after-ns-reload)
+     :unload-hook (:unload-hook opts 'before-ns-unload)
      :files       files
      :since       now}))
 
@@ -315,9 +319,14 @@
   (when *log-fn*
     (*log-fn* :unload ns)))
 
-(defn ns-load [ns]
+(defn ns-load [ns reload-hook]
   (try
     (require ns :reload) ;; use load to load?
+    
+    (when reload-hook
+      (when-some [reload-fn (ns-resolve (find-ns ns) reload-hook)]
+        (reload-fn)))
+
     (when *log-fn*
       (*log-fn* :load ns))
     nil
@@ -327,37 +336,45 @@
       ; (println t)
       t)))
 
-(defn reload-safe []
-  (swap! *state scan-impl)
-  (loop [unloaded []
-         loaded   []
-         state    @*state]
-    (cond
-      (not-empty (:to-unload state))
-      (let [[ns & to-unload'] (:to-unload state)
-            _                 (ns-unload ns (:unload-hook state))
-            state'            (swap! *state assoc :to-unload to-unload')]
-        (recur (conj unloaded ns) loaded state'))
+(defn reload
+  "Options:
+   
+   :throw :: <true | false> - throw or return exception, default true"
+  ([]
+   (reload nil))
+  ([opts]
+   (swap! *state scan-impl)
+   (loop [unloaded []
+          loaded   []
+          state    @*state]
+     (cond
+       (not-empty (:to-unload state))
+       (let [[ns & to-unload'] (:to-unload state)
+             _                 (ns-unload ns (:unload-hook state))
+             state'            (swap! *state assoc :to-unload to-unload')]
+         (recur (conj unloaded ns) loaded state'))
       
-      (not-empty (:to-load state))
-      (let [[ns & to-load'] (:to-load state)]
-        (if-some [ex (ns-load ns)]
-          {:unloaded  unloaded
-           :loaded    loaded
-           :failed    ns
-           :exception ex}
-          (let [state' (swap! *state assoc :to-load to-load')]
-            (recur unloaded (conj loaded ns) state'))))
-    
-      :else
-      {:unloaded unloaded
-       :loaded   loaded})))
-
-(defn reload []
-  (let [res (reload-safe)]
-    (if-some [exception (:exception res)]
-      (throw (ex-info (str "Failed to load namespace: " (:failed res)) (dissoc res :exception) exception))
-      res)))
+       (not-empty (:to-load state))
+       (let [[ns & to-load'] (:to-load state)]
+         (if-some [ex (ns-load ns (:reload-hook state))]
+           (if (:throw opts true)
+             (throw
+               (ex-info
+                 (str "Failed to load namespace: " ns)
+                 {:unloaded  unloaded
+                  :loaded    loaded
+                  :failed    ns}
+                 ex))
+             {:unloaded  unloaded
+              :loaded    loaded
+              :failed    ns
+              :exception ex})
+           (let [state' (swap! *state assoc :to-load to-load')]
+             (recur unloaded (conj loaded ns) state'))))
+       
+       :else
+       {:unloaded unloaded
+        :loaded   loaded}))))
 
 (comment
   (dependencies (first-scan ["fixtures"]))
@@ -376,4 +393,3 @@
   (topo-sort {:a #{:b :c}
               :b #{:c}})
   (dependees @*state))
-  

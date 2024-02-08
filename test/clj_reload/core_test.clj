@@ -134,15 +134,13 @@ Unexpected :require form: [789 a b c]
        {:dirs ["fixtures"]}
        opts))))
 
-(defn reload []
-  (binding [reload/*log-fn* log-fn
-            reload/*stable?* true]
-    (reload/reload)))
-
-(defn reload-safe []
-  (binding [reload/*log-fn* log-fn
-            reload/*stable?* true]
-    (reload/reload-safe)))
+(defn reload
+  ([]
+   (reload []))
+  ([opts]
+   (binding [reload/*log-fn* log-fn
+             reload/*stable?* true]
+     (reload/reload opts))))
 
 (defn modify [& syms]
   (let [[opts syms] (if (map? (first syms))
@@ -212,7 +210,7 @@ Unexpected :require form: [789 a b c]
   (init)
   (with-changed 'c "(ns c (:require e)) (/ 1 0)"
     (touch 'e)
-    (let [res (reload-safe)]
+    (let [res (reload {:throw false})]
       (is (= {:unloaded '[h f a d c e]
               :loaded   '[e]
               :failed   'c} (dissoc res :exception)))))
@@ -334,18 +332,22 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '[:unload h f a d c e :load e c d a f h] @*trace)))
 
-(deftest unload-hook-test
+(deftest hooks-test
   (reset)
   (is (= '[:unload m n :load n m] (modify {:require '[o n m]} 'n)))
-  (is (= [:unload-m :unload-n] @@(resolve 'o/*atom))))
+  (is (= [:unload-m :unload-n :reload-n :reload-m] @@(resolve 'o/*atom)))
+  
+  (reset)
+  (is (= '[:unload m :load m] (modify {:require '[o n m]} 'm)))
+  (is (= [:unload-m :reload-m] @@(resolve 'o/*atom))))
 
 (deftest unload-hook-fail
   (reset)
   (with-changed 'm "(ns m (:require n o))
-                    (defn on-ns-unload []
+                    (defn before-ns-unload []
                       (/ 1 0))"
-    (init)
     (require 'm)
+    (init)
     (touch 'm)
     (reload)
     (is (= '[:unload m :load m] @*trace)))
