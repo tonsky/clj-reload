@@ -253,15 +253,22 @@
 (defn init [opts]
   (reset! *state (init-impl opts)))
 
-(defn scan-impl [state]
+(defn scan-impl [state opts]
   (let [{:keys [dirs since to-load to-unload no-unload no-reload files]} state
+        {:keys [only] :or {only :changed}} opts
         now           (now)
-        changed-files (changed-files files dirs since)
+        changed-files (case only
+                        :changed (changed-files files dirs since)
+                        :loaded  (changed-files files dirs 0)
+                        :all     (changed-files files dirs 0))
         since'        (->> changed-files
                         vals
                         (map :modified)
                         (reduce max now))
-        loaded        @@#'clojure.core/*loaded-libs*
+        loaded        (case only
+                        :changed @@#'clojure.core/*loaded-libs*
+                        :loaded  @@#'clojure.core/*loaded-libs*
+                        :all     (constantly true))
         
         changed-nses  (for [[file _] changed-files
                             :let [{nses :namespaces} (get files file)]
@@ -339,11 +346,14 @@
 (defn reload
   "Options:
    
-   :throw :: <true | false> - throw or return exception, default true"
+   :throw :: true | false - throw or return exception, default true
+   :only  :: :changed     - default. Only reloads changed already loaded files
+           | :loaded      - Reload all loaded files
+           | :all         - Reload everything it can find in dirs"
   ([]
    (reload nil))
   ([opts]
-   (swap! *state scan-impl)
+   (swap! *state scan-impl opts)
    (loop [unloaded []
           loaded   []
           state    @*state]

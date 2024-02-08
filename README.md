@@ -22,7 +22,7 @@ Progress:
 - [x] Unload hooks
 - [x] Return list of nses reloaded
 - [x] after-ns-reload
-- [ ] :changed/:loaded/:all
+- [x] :only :changed/:loaded/:all
 - [ ] keep defonce
 - [ ] keep protocols?
 - [ ] keep multimethods

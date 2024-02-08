@@ -1,6 +1,7 @@
 (ns clj-reload.core-test
   (:require
     [clojure.java.io :as io]
+    [clojure.string :as str]
     [clojure.test :refer [is are deftest testing]]
     [clj-reload.core :as reload])
   (:import
@@ -94,9 +95,12 @@ Unexpected :require form: [789 a b c]
   (doseq [x xs]
     (f x)))
 
+(defn ^File sym->file [sym]
+  (io/file "fixtures" (str (str/replace (name sym) "-" "_") ".clj")))
+
 (defmacro with-changed [sym content' & body]
   `(let [sym#     ~sym
-         file#    (io/file "fixtures" (str ~sym ".clj"))
+         file#    (sym->file sym#)
          content# (slurp file#)]
      (try
        (spit file# ~content')
@@ -108,7 +112,7 @@ Unexpected :require form: [789 a b c]
 
 (defmacro with-deleted [sym & body]
   `(let [sym#     ~sym
-         file#    (io/file "fixtures" (str ~sym ".clj"))
+         file#    (sym->file sym#)
          content# (slurp file#)]
      (try
        (.delete file#)
@@ -151,7 +155,7 @@ Unexpected :require form: [789 a b c]
       (doeach require (:require opts))
       (init opts)
       (doeach touch syms)
-      (reload)
+      (reload opts)
       @*trace)))
 
 ;    a     f     i  l  m
@@ -226,6 +230,17 @@ Unexpected :require form: [789 a b c]
     (is (= '[] (modify (assoc opts :no-reload ['k]) 'k)))
     (is (= '[:unload h f a d e :load e d a f h] (modify (assoc opts :no-reload ['c]) 'e)))
     (is (= '[:unload h f a d e :load e c d a f h] (modify (assoc opts :no-unload ['c]) 'e)))))
+
+(deftest reload-loaded-test
+  (is (= '[:unload a d c e b :load b e c d a] (modify {:require '[a] :only :loaded})))
+  (is (= '[:unload f g a d c e b :load b e c d a g f] (modify {:require '[a f] :only :loaded})))
+  (is (= '[:unload h f g a d c e b :load b e c d a g f h] (modify {:require '[a f h] :only :loaded}))))
+
+(deftest reload-all-test
+  (with-deleted 'err-runtime
+    (is (= '[:unload m n o l i j k h f g a d c e b
+             :load b e c d a g f h k j i l o n m]
+          (modify {:require '[] :only :all})))))
 
 (deftest reload-broken-test
   (doseq [[name body trace1 trace2]
@@ -354,6 +369,20 @@ Unexpected :require form: [789 a b c]
   (reset! *trace [])
   (reload)
   (is (= '[:unload m :load m] @*trace)))
+
+(deftest reload-hook-fail
+  (reset)
+  (require 'm)
+  (init)
+  (with-changed 'n "(ns n (:require o))
+                    (defn after-ns-reload []
+                      (/ 1 0))"
+    (touch 'o)
+    (is (thrown? Exception (reload)))
+    (is (= '[:unload m n o :load o :load-fail n] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[:unload n :load n m] @*trace)))
 
 (comment
   (test/test-ns *ns*)
