@@ -31,7 +31,7 @@
 ;  NS :: {:file     <file>
 ;         :modified <modified>
 ;         :depends  <depends>
-;         :keep     {<symbol> -> <value>}}}
+;         :keepers  {<symbol> -> <value>}}}
 
 (def *state
   (atom {}))
@@ -56,6 +56,10 @@
       (fn [m [k v]]
         (cond-> m (some? v) (assoc! k v)))
       (transient {}) (partition 2 args))))
+
+(defmacro for-map [& body]
+  `(into {}
+     (for ~@body)))
 
 (defn now []
   (System/currentTimeMillis))
@@ -151,7 +155,7 @@
          (when name
            [name (some-map
                    :depends  (persistent! depends)
-                   :keep     (persistent! keep)
+                   :keepers  (persistent! keep)
                    :file     file
                    :modified (last-modified file))])
         
@@ -249,43 +253,39 @@
             :deleted #{<symbol> ...}
             :broken  {<symbol> -> Throwable}}"
   [before dirs since]
-  (let [files-before     (into {}
-                           (for [[ns {file :file}] before]
-                             [file ns]))
+  (let [files-before     (for-map [[ns {file :file}] before]
+                           [file ns])
         
         files-new        (->> dirs
                            (mapcat #(file-seq (io/file %)))
                            (filter file?)
                            (filter #(re-matches #".*\.cljc?" (file-name %)))
                            (set))
+
+        files-modified   (for-map [file  files-new
+                                   :when (> (last-modified file) since)]
+                           [file (read-file file)])
         
-        files-modified   (into {}
-                           (for [file  files-new
-                                 :when (> (last-modified file) since)]
-                             [file (read-file file)]))
-        
-        updated          (into {}
-                           (for [[file res] files-modified
-                                 :when (vector? res)]
-                             res))
+        updated          (for-map [[file res] files-modified
+                                   :when (vector? res)]
+                           res)
         
         deleted?         #(not (contains? files-new %))
         namespaces-new   (merge
-                           (into {}
-                             (for [entry before
-                                   :let  [[ns {file :file}] entry]
-                                   :when (not (contains? files-modified file))
-                                   :when (not (deleted? file))]
-                               entry))
+                           (for-map [entry before
+                                     :let  [[ns {file :file}] entry]
+                                     :when (not (contains? files-modified file))
+                                     :when (not (deleted? file))]
+                             entry)
                            updated)
         deleted          (set (remove namespaces-new (keys before)))
         
-        known-broken     (into {}
-                           (for [[file ex] files-modified
-                                 :when (instance? Throwable ex)
-                                 :let  [ns (files-before file)]
-                                 :when ns]
-                             [ns ex]))]
+        known-broken     (for-map [[file ex] files-modified
+                                   :when (instance? Throwable ex)
+                                   :let  [ns (files-before file)]
+                                   :when ns]
+                           [ns {:modified  (last-modified file)
+                                :exception ex}])]
     {:updated updated
      :deleted deleted
      :broken  known-broken}))
@@ -320,14 +320,13 @@
                            :changed (changed namespaces dirs since)
                            :loaded  (changed namespaces dirs 0)
                            :all     (changed namespaces dirs 0))
-        _                (doseq [[ns ex] broken
+        _                (doseq [[ns body] broken
                                  :when (loaded ns)
                                  :when (not (no-reload ns))]
-                           (throw ex))
-        since'           (->> updated
-                           vals
+                           (throw (:exception body)))
+        since'           (->> (concat (vals updated) (vals broken))
                            (keep :modified)
-                           (reduce max now))
+                           (reduce max (max now since)))
         
         unload?          #(and
                             (loaded %)
@@ -394,6 +393,21 @@
       (log "  failed to load" ns t)
       t)))
 
+(defn resolve-keepers [ns syms]
+  (for-map [[sym _] syms
+            :let    [var (resolve (symbol (name ns) (name sym)))]
+            :when   var]
+    [sym @var]))
+
+(defn restore-keepers [ns keepers]
+  (when-not (empty? keepers)
+    (binding [*ns* *ns*]
+      (in-ns ns)
+      (clojure.core/use 'clojure.core)
+      (eval (cons 'do
+              (for [[sym value] keepers]
+                (list 'def sym value)))))))
+
 (defn reload
   "Options:
    
@@ -416,25 +430,31 @@
        (cond
          (not-empty (:to-unload state))
          (let [[ns & to-unload'] (:to-unload state)
+               keepers           (resolve-keepers ns (-> state :namespaces ns :keepers))
                _                 (ns-unload ns (:unload-hook state))
-               state'            (swap! *state assoc :to-unload to-unload')]
+               state'            (swap! *state #(-> % 
+                                                  (assoc :to-unload to-unload')
+                                                  (update :namespaces update ns assoc :keepers keepers)))]
            (recur (conj unloaded ns) loaded state'))
         
          (not-empty (:to-load state))
          (let [[ns & to-load'] (:to-load state)]
+           (restore-keepers ns (-> state :namespaces ns :keepers))
            (if-some [ex (ns-load ns (:reload-hook state))]
-             (if (:throw opts true)
-               (throw
-                 (ex-info
-                   (str "Failed to load namespace: " ns)
-                   {:unloaded  unloaded
-                    :loaded    loaded
-                    :failed    ns}
-                   ex))
-               {:unloaded  unloaded
-                :loaded    loaded
-                :failed    ns
-                :exception ex})
+             (do
+               (swap! *state update :to-unload #(cons ns %))
+               (if (:throw opts true)
+                 (throw
+                   (ex-info
+                     (str "Failed to load namespace: " ns)
+                     {:unloaded  unloaded
+                      :loaded    loaded
+                      :failed    ns}
+                     ex))
+                 {:unloaded  unloaded
+                  :loaded    loaded
+                  :failed    ns
+                  :exception ex}))
              (let [state' (swap! *state assoc :to-load to-load')]
                (recur unloaded (conj loaded ns) state'))))
          

@@ -23,7 +23,7 @@ Progress:
 - [x] Return list of nses reloaded
 - [x] after-ns-reload
 - [x] :only :changed/:loaded/:all
-- [ ] keep defonce
+- [x] keep defonce
 - [ ] keep protocols?
 - [ ] keep multimethods
 - [ ] ^:clj-reload/keep

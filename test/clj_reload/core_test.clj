@@ -22,7 +22,7 @@
                 a.b.j
                 a.b.k
                 a.b.l}
-              :keep {x nil y nil}}]
+              :keepers {x nil y nil}}]
         (read-str "(ns x
                         (:require
                           a.b.c
@@ -52,7 +52,7 @@
         out  (StringWriter.)
         res  (binding [*out* out]
                (read-str file))]
-    (is (= '[x {:depends #{} :keep {}}] res))
+    (is (= '[x {:depends #{} :keepers {}}] res))
     (is (= "Unexpected :require form: 123
 Unexpected :require form: [345]
 Unexpected :require form: [567 :as a]
@@ -235,33 +235,44 @@ Unexpected :require form: [789 a b c]
              "Loading" b e c d a g f h k j i l o n m]
           (modify {:require '[] :only :all})))))
 
-(deftest reload-broken-test
-  (doseq [[name body trace1 trace2]
-          [["exception"
-            "(ns c (:require e)) (/ 1 0)"
-            '["Unloading" a d c e "Loading" e c "  failed to load" c]
-            '["Unloading" c "Loading" c d a]]
-           
-           ["unknown dep"
-            "(ns c (:require e z))"
-            '["Unloading" a d c e "Loading" e d c "  failed to load" c]
-            '["Loading" c a]]
-           
-           ["ill-formed"
-            "(ns c (:require e"
-            '["Failed to read" "fixtures/c.clj"]
-            '["Unloading" a d c e "Loading" e c d a]]]]
-    (testing name
-      (reset)
-      (require 'a)
-      (init)
-      (with-changed 'c body
-        (touch 'e)
-        (is (thrown? Exception (reload)))
-        (is (= trace1 @*trace)))
-      (reset! *trace [])
-      (reload)
-      (is (= trace2 @*trace)))))
+(deftest reload-exception-test
+  (reset)
+  (require 'a)
+  (init)
+  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
+    (touch 'e)
+    (is (thrown? Exception (reload)))
+    (is (= '["Unloading" a d c e "Loading" e c "  failed to load" c] @*trace))
+    (reset! *trace [])
+    (is (thrown? Exception (reload)))
+    (is (= '["Unloading" c "Loading" c "  failed to load" c] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '["Unloading" c "Loading" c d a] @*trace)))
+
+(deftest reload-unknown-dep-test
+  (reset)
+  (require 'a)
+  (init)
+  (with-changed 'c "(ns c (:require e z))"
+    (touch 'e)
+    (is (thrown? Exception (reload)))
+    (is (= '["Unloading" a d c e "Loading" e d c "  failed to load" c] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '["Unloading" c "Loading" c a] @*trace)))
+
+(deftest reload-ill-former-test
+  (reset)
+  (require 'a)
+  (init)
+  (with-changed 'c "(ns c (:require e"
+    (touch 'e)
+    (is (thrown? Exception (reload)))
+    (is (= '["Failed to read" "fixtures/c.clj"] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '["Unloading" a d c e "Loading" e c d a] @*trace)))
 
 (deftest reload-changed-test
   (reset)
@@ -373,7 +384,7 @@ Unexpected :require form: [789 a b c]
   (is (= '["Unloading" m "Loading" m] (modify {:require '[o n m]} 'm)))
   (is (= [:unload-m :reload-m] @@(resolve 'o/*atom))))
 
-(deftest unload-hook-fail
+(deftest unload-hook-fail-test
   (reset)
   (with-changed 'm "(ns m (:require n o))
                     (defn before-ns-unload []
@@ -387,7 +398,7 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '["Unloading" m "  exception during unload hook" "java.lang.ArithmeticException" "Loading" m] @*trace)))
 
-(deftest reload-hook-fail
+(deftest reload-hook-fail-test
   (reset)
   (require 'm)
   (init)
@@ -401,6 +412,15 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '["Unloading" n "Loading" n m] @*trace)))
 
+(deftest defonce-test
+  (reset)
+  (require 'l)
+  (init)
+  (reset! @(resolve 'l/*atom) 100500)
+  (touch 'l)
+  (reload)
+  (is (= 100500 @@(resolve 'l/*atom))))
+
 (comment
   (test/test-ns *ns*)
-  (clojure.test/run-test-var #'reload-rename-ns))
+  (clojure.test/run-test-var #'reload-exception-test))
