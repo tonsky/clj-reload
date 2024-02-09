@@ -8,48 +8,40 @@
     [java.io File PushbackReader StringReader StringWriter]))
 
 (defn read-str [s]
-  (reload/read-file (PushbackReader. (StringReader. s))))
+  (reload/read-file (PushbackReader. (StringReader. s)) nil))
 
 (deftest read-file-test
-  (let [file "(ns x
-                (:require
-                  a.b.c
-                  [a.b.d]
-                  [a.b.e :as e]
-                  [a.b f g]
-                  [a.b [h :as h]])
-                (:require
-                  a.b.i)
-                (:use
-                  a.b.j))
-              ...
-              (require 'a.b.k)
-              ...
-              (use 'a.b.l)
-              ...
-              (ns y
-                (:require
-                  a.b.m))
-              ...
-              (in-ns 'z)
-              ...
-              (require 'a.b.n)"]
-    (is (= '{x {:depends
-                #{a.b.c
-                  a.b.d
-                  a.b.e
-                  a.b.f
-                  a.b.g
-                  a.b.h
-                  a.b.i
-                  a.b.j
-                  a.b.k
-                  a.b.l}}
-             y {:depends
-                #{a.b.m}}
-             z {:depends
-                #{a.b.n}}}
-          (read-str file)))))
+  (is (= '[x {:depends
+              #{a.b.c
+                a.b.d
+                a.b.e
+                a.b.f
+                a.b.g
+                a.b.h
+                a.b.i
+                a.b.j
+                a.b.k
+                a.b.l}
+              :keep {x nil y nil}}]
+        (read-str "(ns x
+                        (:require
+                          a.b.c
+                          [a.b.d]
+                          [a.b.e :as e]
+                          [a.b f g]
+                          [a.b [h :as h]])
+                        (:require
+                          a.b.i)
+                        (:use
+                          a.b.j))
+                      ...
+                      (defonce x 1)
+                      ...
+                      (require 'a.b.k)
+                      ...
+                      (defonce y 2)
+                      ...
+                      (use 'a.b.l)"))))
 
 (deftest read-file-errors-test
   (let [file "(ns x
@@ -60,7 +52,7 @@
         out  (StringWriter.)
         res  (binding [*out* out]
                (read-str file))]
-    (is (= '{x {:depends #{}}} res))
+    (is (= '[x {:depends #{} :keep {}}] res))
     (is (= "Unexpected :require form: 123
 Unexpected :require form: [345]
 Unexpected :require form: [567 :as a]
@@ -121,13 +113,15 @@ Unexpected :require form: [789 a b c]
          (spit file# content#)
          (touch sym#)))))
 
-(defn log-fn [op ns & _]
+(defn log-fn [type arg & _]
   (swap! *trace
     (fn [track]
-      (let [last-op (->> track (filter keyword?) last)]
-        (cond-> track
-          (not= op last-op) (conj op)
-          true              (conj ns))))))
+      (let [last-type (->> track (filter string?) last)]
+        (cond
+          (= "fixtures/err_parse.clj" arg)          track
+          (= "  exception during unload hook" type) (conj track type (.getName (class arg)))
+          (not= type last-type)                     (conj track type arg)
+          :else                                     (conj track arg))))))
 
 (defn init
   ([]
@@ -140,11 +134,10 @@ Unexpected :require form: [789 a b c]
 
 (defn reload
   ([]
-   (reload []))
+   (reload nil))
   ([opts]
-   (binding [reload/*log-fn* log-fn
-             reload/*stable?* true]
-     (reload/reload opts))))
+   (reload/reload
+     (merge {:log-fn log-fn} opts))))
 
 (defn modify [& syms]
   (let [[opts syms] (if (map? (first syms))
@@ -166,21 +159,21 @@ Unexpected :require form: [789 a b c]
 
 (deftest reload-test
   (let [opts {:require '[b e c d h g a f k j i l]}]
-    (is (= '[:unload a :load a] (modify opts 'a)))
-    (is (= '[:unload a b :load b a] (modify opts 'b)))
-    (is (= '[:unload a c :load c a] (modify opts 'c)))
-    (is (= '[:unload f a d :load d a f] (modify opts 'd)))
-    (is (= '[:unload h f a d c e :load e c d a f h] (modify opts 'e)))
-    (is (= '[:unload f :load f] (modify opts 'f)))
-    (is (= '[:unload f g :load g f] (modify opts 'g)))
-    (is (= '[:unload i :load i] (modify opts 'i)))
-    (is (= '[:unload i j :load j i] (modify opts 'j)))
-    (is (= '[:unload i j k :load k j i] (modify opts 'k)))
-    (is (= '[:unload l :load l] (modify opts 'l)))
+    (is (= '["Unloading" a "Loading" a] (modify opts 'a)))
+    (is (= '["Unloading" a b "Loading" b a] (modify opts 'b)))
+    (is (= '["Unloading" a c "Loading" c a] (modify opts 'c)))
+    (is (= '["Unloading" f a d "Loading" d a f] (modify opts 'd)))
+    (is (= '["Unloading" h f a d c e "Loading" e c d a f h] (modify opts 'e)))
+    (is (= '["Unloading" f "Loading" f] (modify opts 'f)))
+    (is (= '["Unloading" f g "Loading" g f] (modify opts 'g)))
+    (is (= '["Unloading" i "Loading" i] (modify opts 'i)))
+    (is (= '["Unloading" i j "Loading" j i] (modify opts 'j)))
+    (is (= '["Unloading" i j k "Loading" k j i] (modify opts 'k)))
+    (is (= '["Unloading" l "Loading" l] (modify opts 'l)))
     (is (= '[] (modify opts)))
-    (is (= '[:unload a c b :load b c a] (modify opts 'a 'b 'c)))
-    (is (= '[:unload l i j k h f a d c e :load e c d a f h k j i l] (modify opts 'e 'k 'l)))
-    (is (= '[:unload l i j k h f g a d c e b :load b e c d a g f h k j i l] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
+    (is (= '["Unloading" a c b "Loading" b c a] (modify opts 'a 'b 'c)))
+    (is (= '["Unloading" l i j k h f a d c e "Loading" e c d a f h k j i l] (modify opts 'e 'k 'l)))
+    (is (= '["Unloading" l i j k h f g a d c e b "Loading" b e c d a g f h k j i l] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
 
 (deftest return-value-ok-test
   (reset)
@@ -222,42 +215,42 @@ Unexpected :require form: [789 a b c]
           :loaded   '[c d a f h]} (reload))))
 
 (deftest reload-active-test
-  (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e)))
-  (is (= '[:unload a d c e :load e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
+  (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e)))
+  (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
 
 (deftest exclude-test
   (let [opts {:require '[b e c d h g a f k j i l]}]
     (is (= '[] (modify (assoc opts :no-reload ['k]) 'k)))
-    (is (= '[:unload h f a d e :load e d a f h] (modify (assoc opts :no-reload ['c]) 'e)))
-    (is (= '[:unload h f a d e :load e c d a f h] (modify (assoc opts :no-unload ['c]) 'e)))))
+    (is (= '["Unloading" h f a d e "Loading" e d a f h] (modify (assoc opts :no-reload ['c]) 'e)))
+    (is (= '["Unloading" h f a d e "Loading" e c d a f h] (modify (assoc opts :no-unload ['c]) 'e)))))
 
 (deftest reload-loaded-test
-  (is (= '[:unload a d c e b :load b e c d a] (modify {:require '[a] :only :loaded})))
-  (is (= '[:unload f g a d c e b :load b e c d a g f] (modify {:require '[a f] :only :loaded})))
-  (is (= '[:unload h f g a d c e b :load b e c d a g f h] (modify {:require '[a f h] :only :loaded}))))
+  (is (= '["Unloading" a d c e b "Loading" b e c d a] (modify {:require '[a] :only :loaded})))
+  (is (= '["Unloading" f g a d c e b "Loading" b e c d a g f] (modify {:require '[a f] :only :loaded})))
+  (is (= '["Unloading" h f g a d c e b "Loading" b e c d a g f h] (modify {:require '[a f h] :only :loaded}))))
 
 (deftest reload-all-test
   (with-deleted 'err-runtime
-    (is (= '[:unload m n o l i j k h f g a d c e b
-             :load b e c d a g f h k j i l o n m]
+    (is (= '["Unloading" m n o l i j k h f g a d c e b
+             "Loading" b e c d a g f h k j i l o n m]
           (modify {:require '[] :only :all})))))
 
 (deftest reload-broken-test
   (doseq [[name body trace1 trace2]
           [["exception"
             "(ns c (:require e)) (/ 1 0)"
-            '[:unload a d c e :load e :load-fail c]
-            '[:unload c :load c d a]]
+            '["Unloading" a d c e "Loading" e c "  failed to load" c]
+            '["Unloading" c "Loading" c d a]]
            
            ["unknown dep"
             "(ns c (:require e z))"
-            '[:unload a d c e :load e d :load-fail c]
-            '[:load c a]]
+            '["Unloading" a d c e "Loading" e d c "  failed to load" c]
+            '["Loading" c a]]
            
            ["ill-formed"
             "(ns c (:require e"
-            '[:unload a d c e :load e d :load-fail a]
-            '[:load a]]]]
+            '["Failed to read" "fixtures/c.clj"]
+            '["Unloading" a d c e "Loading" e c d a]]]]
     (testing name
       (reset)
       (require 'a)
@@ -278,10 +271,10 @@ Unexpected :require form: [789 a b c]
     (with-changed 'j "(ns j (:require i))"
       (with-changed 'k "(ns k (:require j))"
         (reload)
-        (is (= '[:unload i j k :load i j k] @*trace)))))
+        (is (= '["Unloading" i j k "Loading" i j k] @*trace)))))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload k j i :load k j i] @*trace)))
+  (is (= '["Unloading" k j i "Loading" k j i] @*trace)))
 
 (deftest reload-deleted-test
   (reset)
@@ -289,7 +282,7 @@ Unexpected :require form: [789 a b c]
   (init)
   (with-deleted 'l
     (reload)
-    (is (= '[:unload l] @*trace))))
+    (is (= '["Unloading" l] @*trace))))
 
 (deftest reload-deleted-2-test
   (reset)
@@ -298,10 +291,10 @@ Unexpected :require form: [789 a b c]
   (with-changed 'j "(ns j)"
     (with-deleted 'k
       (reload)
-      (is (= '[:unload i j k :load j i] @*trace))))
+      (is (= '["Unloading" i j k "Loading" j i] @*trace))))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload i j :load j i] @*trace)))
+  (is (= '["Unloading" i j "Loading" j i] @*trace)))
 
 (deftest cycle-self-test
   (reset)
@@ -312,7 +305,7 @@ Unexpected :require form: [789 a b c]
     (is (= '[] @*trace)))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload l :load l] @*trace)))
+  (is (= '["Unloading" l "Loading" l] @*trace)))
 
 (deftest cycle-one-hop-test
   (reset)
@@ -323,7 +316,7 @@ Unexpected :require form: [789 a b c]
     (is (= '[] @*trace)))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload i j :load j i] @*trace)))
+  (is (= '["Unloading" i j "Loading" j i] @*trace)))
 
 (deftest cycle-two-hops-test
   (reset)
@@ -334,7 +327,7 @@ Unexpected :require form: [789 a b c]
     (is (= '[] @*trace)))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload i j k :load k j i] @*trace)))
+  (is (= '["Unloading" i j k "Loading" k j i] @*trace)))
 
 (deftest cycle-extra-nodes-test
   (reset)
@@ -345,15 +338,15 @@ Unexpected :require form: [789 a b c]
     (is (= '[] @*trace)))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload h f a d c e :load e c d a f h] @*trace)))
+  (is (= '["Unloading" h f a d c e "Loading" e c d a f h] @*trace)))
 
 (deftest hooks-test
   (reset)
-  (is (= '[:unload m n :load n m] (modify {:require '[o n m]} 'n)))
+  (is (= '["Unloading" m n "Loading" n m] (modify {:require '[o n m]} 'n)))
   (is (= [:unload-m :unload-n :reload-n :reload-m] @@(resolve 'o/*atom)))
   
   (reset)
-  (is (= '[:unload m :load m] (modify {:require '[o n m]} 'm)))
+  (is (= '["Unloading" m "Loading" m] (modify {:require '[o n m]} 'm)))
   (is (= [:unload-m :reload-m] @@(resolve 'o/*atom))))
 
 (deftest unload-hook-fail
@@ -365,10 +358,10 @@ Unexpected :require form: [789 a b c]
     (init)
     (touch 'm)
     (reload)
-    (is (= '[:unload m :load m] @*trace)))
+    (is (= '["Unloading" m "  exception during unload hook" "java.lang.ArithmeticException" "Loading" m] @*trace)))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload m :load m] @*trace)))
+  (is (= '["Unloading" m "  exception during unload hook" "java.lang.ArithmeticException" "Loading" m] @*trace)))
 
 (deftest reload-hook-fail
   (reset)
@@ -379,10 +372,10 @@ Unexpected :require form: [789 a b c]
                       (/ 1 0))"
     (touch 'o)
     (is (thrown? Exception (reload)))
-    (is (= '[:unload m n o :load o :load-fail n] @*trace)))
+    (is (= '["Unloading" m n o "Loading" o n "  failed to load" n] @*trace)))
   (reset! *trace [])
   (reload)
-  (is (= '[:unload n :load n m] @*trace)))
+  (is (= '["Unloading" n "Loading" n m] @*trace)))
 
 (comment
   (test/test-ns *ns*)
