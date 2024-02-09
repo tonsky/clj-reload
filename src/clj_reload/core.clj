@@ -50,6 +50,13 @@
 (def intos
   (fnil into #{}))
 
+(defn some-map [& args]
+  (persistent!
+    (reduce
+      (fn [m [k v]]
+        (cond-> m (some? v) (assoc! k v)))
+      (transient {}) (partition 2 args))))
+
 (defn now []
   (System/currentTimeMillis))
 
@@ -127,9 +134,7 @@
   ([file]
    (with-open [rdr (reader file)]
      (try
-       (update (read-file rdr file) 1 assoc
-         :file file
-         :modified (last-modified file))
+       (read-file rdr file)
        (catch Exception e
          (log "Failed to read" (.getPath ^File file) (.getMessage e))
          e))))
@@ -143,8 +148,12 @@
                   (first form))]
        (cond
          (= ::eof form)
-         [name {:depends (persistent! depends)
-                :keep    (persistent! keep)}]
+         (when name
+           [name (some-map
+                   :depends  (persistent! depends)
+                   :keep     (persistent! keep)
+                   :file     file
+                   :modified (last-modified file))])
         
          (and name (#{'ns 'in-ns} tag))
          (throw (ex-info (str "Second namespace definition after " name ": " form " in " file)
@@ -200,23 +209,23 @@
 
 (declare topo-sort)
 
-(defn report-cycle [deps]
+(defn report-cycle [deps all-deps]
   (let [circular (filterv
                    (fn [node]
                      (try
-                       (topo-sort (dissoc deps node) (fn [_] (throw (ex-info "Part of cycle" {}))))
+                       (topo-sort (dissoc deps node) (fn [_ _] (throw (ex-info "Part of cycle" {}))))
                        true
                        (catch Exception e
                          false)))
                    (keys deps))]
-    (throw (ex-info (str "Cycle detected: " (str/join ", " (sort circular))) {:nodes circular}))))
+    (throw (ex-info (str "Cycle detected: " (str/join ", " (sort circular))) {:nodes circular :deps all-deps}))))
 
 (defn topo-sort
   ([deps]
    (topo-sort deps report-cycle))
-  ([deps on-cycle]
+  ([all-deps on-cycle]
    (loop [res  (transient [])
-          deps deps]
+          deps all-deps]
      (if (empty? deps)
        (persistent! res)
        (let [root (fn [node]
@@ -225,7 +234,7 @@
              node (->> (keys deps) (filter root) (sort) (first))]
          (if node
            (recur (conj! res node) (dissoc deps node))
-           (on-cycle deps)))))))
+           (on-cycle deps all-deps)))))))
 
 (defn topo-sort-fn
   "Accepts dependees map {ns -> #{downsteram-ns ...}},
@@ -240,35 +249,43 @@
             :deleted #{<symbol> ...}
             :broken  {<symbol> -> Throwable}}"
   [before dirs since]
-  (let [all              (->> dirs
+  (let [files-before     (into {}
+                           (for [[ns {file :file}] before]
+                             [file ns]))
+        
+        files-new        (->> dirs
                            (mapcat #(file-seq (io/file %)))
                            (filter file?)
                            (filter #(re-matches #".*\.cljc?" (file-name %)))
                            (set))
-        modified         (->> all
-                           (filter #(> (last-modified %) since))
-                           set)
-        [updated broken] (reduce
-                           (fn [[updated broken] file]
-                             (let [res (read-file file)]
-                               (if (instance? Throwable res)
-                                 [updated (assoc broken file res)]
-                                 [(assoc updated (first res) (second res)) broken])))
-                           [{} {}]
-                           modified)
-        files-before     (into {}
-                           (for [[ns {file :file}] before]
-                             [file ns]))
+        
+        files-modified   (into {}
+                           (for [file  files-new
+                                 :when (> (last-modified file) since)]
+                             [file (read-file file)]))
+        
+        updated          (into {}
+                           (for [[file res] files-modified
+                                 :when (vector? res)]
+                             res))
+        
+        deleted?         #(not (contains? files-new %))
+        namespaces-new   (merge
+                           (into {}
+                             (for [entry before
+                                   :let  [[ns {file :file}] entry]
+                                   :when (not (contains? files-modified file))
+                                   :when (not (deleted? file))]
+                               entry))
+                           updated)
+        deleted          (set (remove namespaces-new (keys before)))
+        
         known-broken     (into {}
-                           (for [[file ex] broken
-                                 :let [ns (files-before file)]
+                           (for [[file ex] files-modified
+                                 :when (instance? Throwable ex)
+                                 :let  [ns (files-before file)]
                                  :when ns]
-                             [ns ex]))
-        ; unknown-broken (remove files-before (keys broken))
-        deleted          (into #{}
-                           (for [[file ns] files-before
-                                 :when (not (all file))]
-                             ns))]
+                             [ns ex]))]
     {:updated updated
      :deleted deleted
      :broken  known-broken}))
@@ -293,20 +310,24 @@
   (let [{:keys [dirs since to-load to-unload no-unload no-reload namespaces]} state
         {:keys [only] :or {only :changed}} opts
         now              (now)
+        loaded           (case only
+                           :changed @@#'clojure.core/*loaded-libs*
+                           :loaded  @@#'clojure.core/*loaded-libs*
+                           :all     (constantly true))
         {:keys [updated
                 deleted
                 broken]} (case only
                            :changed (changed namespaces dirs since)
                            :loaded  (changed namespaces dirs 0)
                            :all     (changed namespaces dirs 0))
+        _                (doseq [[ns ex] broken
+                                 :when (loaded ns)
+                                 :when (not (no-reload ns))]
+                           (throw ex))
         since'           (->> updated
                            vals
                            (keep :modified)
                            (reduce max now))
-        loaded           (case only
-                           :changed @@#'clojure.core/*loaded-libs*
-                           :loaded  @@#'clojure.core/*loaded-libs*
-                           :all     (constantly true))
         
         unload?          #(and
                             (loaded %)
@@ -322,15 +343,13 @@
                            (topo-sort)
                            (reverse))
         
-        load?            #(and
-                            (loaded %)
-                            (not (no-reload %)))
-        _                (doseq [[ns ex] broken
-                                 :when (load? ns)]
-                           (throw ex))
         namespaces'      (as-> namespaces %
                            (reduce dissoc % deleted)
                            (merge % updated))
+        load?            #(and
+                            (loaded %)
+                            (not (no-reload %))
+                            (namespaces' %))
         deps'            (dependees namespaces')
         topo-sort'       (topo-sort-fn deps')
         to-load'         (->> (keys updated)
@@ -369,7 +388,6 @@
     (when reload-hook
       (when-some [reload-fn (ns-resolve (find-ns ns) reload-hook)]
         (reload-fn)))
-
     
     nil
     (catch Throwable t
@@ -389,6 +407,9 @@
   ([opts]
    (binding [*log-fn* (:log-fn opts println)]
      (swap! *state scan-impl opts)
+     ; (clojure.pprint/pprint (:namespaces @*state))
+     ; (println "To unload:" (:to-unload @*state))
+     ; (println "To load:" (:to-load @*state))
      (loop [unloaded []
             loaded   []
             state    @*state]

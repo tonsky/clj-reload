@@ -296,6 +296,30 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '["Unloading" i j "Loading" j i] @*trace)))
 
+(deftest reload-rename-ns
+  (reset)
+  (require 'i)
+  (init)
+  (with-changed 'i "(ns z)"
+    (touch 'k)
+    (reload)
+    (is (= '["Unloading" i j k "Loading" k j] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[] @*trace)))
+
+(deftest reload-remove-ns
+  (reset)
+  (require 'i)
+  (init)
+  (with-changed 'i ""
+    (touch 'k)
+    (reload)
+    (is (= '["Unloading" i j k "Loading" k j] @*trace)))
+  (reset! *trace [])
+  (reload)
+  (is (= '[] @*trace)))
+
 (deftest cycle-self-test
   (reset)
   (require 'l)
@@ -379,4 +403,4 @@ Unexpected :require form: [789 a b c]
 
 (comment
   (test/test-ns *ns*)
-  (clojure.test/run-test-var #'reload-deleted))
+  (clojure.test/run-test-var #'reload-rename-ns))
