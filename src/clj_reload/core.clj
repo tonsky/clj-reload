@@ -1,6 +1,7 @@
 (ns clj-reload.core
   (:require
     [clojure.java.io :as io]
+    [clojure.spec.alpha :as spec]
     [clojure.string :as str]
     [clojure.walk :as walk])
   (:import
@@ -13,7 +14,8 @@
   (when *log-fn*
     (apply *log-fn* args)))
 
-; {:dirs        [<string> ...]   - where to look for files
+; {// config
+;  :dirs        [<string> ...]   - where to look for files
 ;  :no-unload   #{<symbol> ...}  - list of nses to skip unload
 ;  :no-reload   #{<symbol> ...}  - list of nses to skip reload
 ;  :reload-hook <symbol>         - if function with this name exists in ns,
@@ -22,16 +24,23 @@
 ;  :unload-hook <symbol>         - if function with this name exists in ns,
 ;                                  it will be called before unloading.
 ;                                  default: before-ns-unload
+;  // state
 ;  :since       <long>           - last time list of files was scanned
+;  :files       {<file> -> File} - all found files
 ;  :namespaces  {<symbol> -> NS} - all found namespaces
 ;  :to-unload   #{<symbol> ...}  - list of nses pending unload
 ;  :to-load     #{<symbol> ...}  - list of nses pending load
 ; }
 ;
-;  NS :: {:file     <file>
-;         :modified <modified>
-;         :depends  <depends>
-;         :keepers  {<symbol> -> <value>}}}
+; File :: {:namespaces #{<symbol> ...}
+;          :modified   <modified>}
+;
+; NS   :: {:files    #{<file> ...}
+;          :requires #{<symbol> ...}
+;          :keep     {<symbol> -> Keep}}}
+;
+; Keep :: {:tag   <symbol>
+;          :value <any?>}
 
 (def *state
   (atom {}))
@@ -40,6 +49,9 @@
   {:read-cond :allow
    :features  #{:clj}
    :eof       ::eof})
+
+(defn throwable? [o]
+  (instance? Throwable o))
 
 (defn update! [m k f & args]
   (assoc! m k (apply f (m k) args)))
@@ -59,6 +71,10 @@
 
 (defmacro for-map [& body]
   `(into {}
+     (for ~@body)))
+
+(defmacro for-set [& body]
+  `(into #{}
      (for ~@body)))
 
 (defn now []
@@ -134,61 +150,54 @@
           (recur body' depends))))))
 
 (defn read-file
-  "Returns [<symbol> Namespace] or Exception"
+  "Returns {<symbol> NS} or Exception"
   ([file]
    (with-open [rdr (reader file)]
      (try
        (read-file rdr file)
        (catch Exception e
          (log "Failed to read" (.getPath ^File file) (.getMessage e))
-         e))))
+         (ex-info (str "Failed to read" (.getPath ^File file)) {:file file} e)))))
   ([rdr file]
-   (loop [name    nil
-          depends (transient #{})
-          keep    (transient {})]
+   (loop [ns nil
+          nses {}]
      (let [form (binding [*read-eval* false]
                   (read reader-opts rdr))
            tag  (when (list? form)
                   (first form))]
        (cond
          (= ::eof form)
-         (when name
-           [name (some-map
-                   :depends  (persistent! depends)
-                   :keepers  (persistent! keep)
-                   :file     file
-                   :modified (last-modified file))])
-        
-         (and name (#{'ns 'in-ns} tag))
-         (throw (ex-info (str "Second namespace definition after " name ": " form " in " file)
-                  {:name name :form form}))
-        
+         nses
+         
          (= 'ns tag)
-         (let [[name depends] (parse-ns-form form)]
-           (recur name (transient depends) keep))
+         (let [[ns requires] (parse-ns-form form)]
+           (recur ns (assoc-in nses [ns :requires] requires)))
           
          (= 'in-ns tag)
-         (let [[_ name] (expand-quotes form)]
-           (recur name depends keep))
+         (let [[_ ns] (expand-quotes form)]
+           (recur ns nses))
         
-         (and (nil? name) (#{'require 'use} tag))
+         (and (nil? ns) (#{'require 'use} tag))
          (throw (ex-info (str "Unexpected " tag " before ns definition in " file) {:form form}))
         
          (#{'require 'use} tag)
-         (let [depends' (parse-require-form (expand-quotes form))]
-           (recur name (reduce conj! depends depends') keep))
+         (let [requires' (parse-require-form (expand-quotes form))]
+           (recur ns (update-in nses [ns :requires] intos requires')))
         
-         (= 'defonce tag)
-         (recur name depends (assoc! keep (second form) nil))
+         (or
+           (= 'defonce tag)
+           (::keep (meta form)))
+         (let [[_ name] form]
+           (recur ns (assoc-in nses [ns :keep name] {:tag tag})))
         
          :else
-         (recur name depends keep))))))
+         (recur ns nses))))))
 
 (defn dependees 
-  "ns -> #{downstream-ns ...}"
+  "Inverts the requies graph. Returns {ns -> #{downstream-ns ...}}"
   [namespaces]
   (let [*m (volatile! (transient {}))]
-    (doseq [[from {tos :depends}] namespaces]
+    (doseq [[from {tos :requires}] namespaces]
       (vswap! *m update! from #(or % #{}))
       (doseq [to tos]
         (vswap! *m update! to conjs from)))
@@ -248,85 +257,108 @@
     (fn [coll]
       (filter (set coll) sorted))))
 
-(defn changed
-  "Returns {:updated {<symbol> -> Namespace}
-            :deleted #{<symbol> ...}
-            :broken  {<symbol> -> Throwable}}"
-  [before dirs since]
-  (let [files-before     (for-map [[ns {file :file}] before]
-                           [file ns])
-        
-        files-new        (->> dirs
+(defn files->namespaces [files already-read]
+  (let [*res (volatile! {})]
+    (doseq [file files
+            [name namespace] (or
+                               (already-read file)
+                               (read-file file))
+            :when (not (throwable? namespace))]
+      (vswap! *res update name #(merge-with into % namespace {:files #{file}})))
+    @*res))
+
+(defn scan-impl [files-before dirs since]
+  (let [files-now        (->> dirs
                            (mapcat #(file-seq (io/file %)))
                            (filter file?)
-                           (filter #(re-matches #".*\.cljc?" (file-name %)))
-                           (set))
+                           (filter #(re-matches #".*\.cljc?" (file-name %))))
 
-        files-modified   (for-map [file  files-new
-                                   :when (> (last-modified file) since)]
-                           [file (read-file file)])
+        [files-modified
+         files-broken]   (reduce
+                           (fn [[modified broken] file]
+                             (if (<= (last-modified file) since)
+                               [modified broken]
+                               (let [res (read-file file)]
+                                 (if (throwable? res)
+                                   [modified (assoc broken file res)]
+                                   [(assoc modified file res) broken]))))
+                           [{} {}] files-now)
+
+        files-deleted    (reduce disj (set (keys files-before)) files-now)
         
-        updated          (for-map [[file res] files-modified
-                                   :when (vector? res)]
-                           res)
+        nses-broken      (for-map [[file ex] files-broken
+                                   ns (get-in files-before [file :namespaces])]
+                           [ns ex])
         
-        deleted?         #(not (contains? files-new %))
-        namespaces-new   (merge
-                           (for-map [entry before
-                                     :let  [[ns {file :file}] entry]
-                                     :when (not (contains? files-modified file))
-                                     :when (not (deleted? file))]
-                             entry)
-                           updated)
-        deleted          (set (remove namespaces-new (keys before)))
+        nses-unload      (reduce
+                           #(into %1 (get-in files-before [%2 :namespaces]))
+                           #{}
+                           (concat (keys files-modified) files-deleted))
         
-        known-broken     (for-map [[file ex] files-modified
-                                   :when (instance? Throwable ex)
-                                   :let  [ns (files-before file)]
-                                   :when ns]
-                           [ns {:modified  (last-modified file)
-                                :exception ex}])]
-    {:updated updated
-     :deleted deleted
-     :broken  known-broken}))
+        nses-load        (for-set [[file namespaces] files-modified
+                                   ns (keys namespaces)]
+                           ns)
+        
+        files'           (as-> files-before %
+                           (reduce dissoc % files-deleted)
+                           (merge %
+                             (for-map [[file namespaces] files-modified]
+                               [file {:namespaces (set (keys namespaces))
+                                      :modified   (last-modified file)}])))
+        
+        already-read     (merge
+                           files-modified
+                           (for-map [[file _] files-broken]
+                             [file {}]))
+        
+        nses'            (files->namespaces (keys files') already-read)] ;; TODO don't parse second time
+                           
+    {:broken      nses-broken
+     :files'      files'
+     :namespaces' nses'
+     :to-unload'  nses-unload
+     :to-load'    nses-load}))
 
 (defn init-impl [opts]
   (let [dirs (vec (:dirs opts))
         now  (now)
-        nses (:updated (changed nil dirs 0))]
+        {:keys [files' namespaces']} (scan-impl nil dirs 0)]
     {:dirs        dirs
      :no-unload   (set (:no-unload opts))
      :no-reload   (set (:no-reload opts))
      :reload-hook (:reload-hook opts 'after-ns-reload)
      :unload-hook (:unload-hook opts 'before-ns-unload)
-     :namespaces  nses
-     :since       now}))
+     :since       now
+     :files       files'
+     :namespaces  namespaces'}))
 
 (defn init [opts]
   (binding [*log-fn* nil]
     (reset! *state (init-impl opts))))
 
-(defn scan-impl [state opts]
-  (let [{:keys [dirs since to-load to-unload no-unload no-reload namespaces]} state
+(defn scan [state opts]
+  (let [{:keys [dirs since to-load to-unload no-unload no-reload files namespaces]} state
         {:keys [only] :or {only :changed}} opts
         now              (now)
         loaded           (case only
                            :changed @@#'clojure.core/*loaded-libs*
                            :loaded  @@#'clojure.core/*loaded-libs*
                            :all     (constantly true))
-        {:keys [updated
-                deleted
-                broken]} (case only
-                           :changed (changed namespaces dirs since)
-                           :loaded  (changed namespaces dirs 0)
-                           :all     (changed namespaces dirs 0))
-        _                (doseq [[ns body] broken
+        {:keys [broken
+                files'
+                namespaces'
+                to-unload'
+                to-load']} (case only
+                             :changed (scan-impl files dirs since)
+                             :loaded  (scan-impl files dirs 0)
+                             :all     (scan-impl files dirs 0))
+        
+        _                (doseq [[ns {:keys [file exception]}] broken
                                  :when (loaded ns)
                                  :when (not (no-reload ns))]
-                           (throw (:exception body)))
-        since'           (->> (concat (vals updated) (vals broken))
-                           (keep :modified)
-                           (reduce max (max now since)))
+                           (throw exception))
+        
+        since'           (transduce (map :modified) max (max since now) (vals files'))
         
         unload?          #(and
                             (loaded %)
@@ -334,7 +366,7 @@
                             (not (no-reload %)))
         deps             (dependees namespaces)
         topo-sort        (topo-sort-fn deps) 
-        to-unload'       (->> (concat (keys updated) deleted)
+        to-unload''      (->> to-unload'
                            (filter unload?)
                            (transitive-closure deps)
                            (filter unload?)
@@ -342,16 +374,13 @@
                            (topo-sort)
                            (reverse))
         
-        namespaces'      (as-> namespaces %
-                           (reduce dissoc % deleted)
-                           (merge % updated))
         load?            #(and
                             (loaded %)
                             (not (no-reload %))
                             (namespaces' %))
         deps'            (dependees namespaces')
         topo-sort'       (topo-sort-fn deps')
-        to-load'         (->> (keys updated)
+        to-load''        (->> to-load'
                            (filter load?)
                            (transitive-closure deps')
                            (filter load?)
@@ -359,9 +388,10 @@
                            (topo-sort'))]
     (assoc state
       :since      since'
-      :to-unload  to-unload'
-      :to-load    to-load'
-      :namespaces namespaces')))
+      :files      files'
+      :namespaces namespaces'
+      :to-unload  to-unload''
+      :to-load    to-load'')))
 
 (defn ns-unload [ns unload-hook]
   (log "Unloading" ns)
@@ -382,7 +412,7 @@
 (defn ns-load [ns reload-hook]
   (log "Loading" ns)
   (try
-    (require ns :reload) ;; use load to load?
+    (require ns :reload) ;; map back to files, use load to load
     
     (when reload-hook
       (when-some [reload-fn (ns-resolve (find-ns ns) reload-hook)]
@@ -420,7 +450,7 @@
    (reload nil))
   ([opts]
    (binding [*log-fn* (:log-fn opts println)]
-     (swap! *state scan-impl opts)
+     (swap! *state scan opts)
      ; (clojure.pprint/pprint (:namespaces @*state))
      ; (println "To unload:" (:to-unload @*state))
      ; (println "To load:" (:to-load @*state))
@@ -430,16 +460,16 @@
        (cond
          (not-empty (:to-unload state))
          (let [[ns & to-unload'] (:to-unload state)
-               keepers           (resolve-keepers ns (-> state :namespaces ns :keepers))
+               keepers           (resolve-keepers ns (-> state :namespaces ns :keep))
                _                 (ns-unload ns (:unload-hook state))
                state'            (swap! *state #(-> % 
                                                   (assoc :to-unload to-unload')
-                                                  (update :namespaces update ns assoc :keepers keepers)))]
+                                                  (update :namespaces update ns assoc :keep keepers)))]
            (recur (conj unloaded ns) loaded state'))
         
          (not-empty (:to-load state))
          (let [[ns & to-load'] (:to-load state)]
-           (restore-keepers ns (-> state :namespaces ns :keepers))
+           (restore-keepers ns (-> state :namespaces ns :keep))
            (if-some [ex (ns-load ns (:reload-hook state))]
              (do
                (swap! *state update :to-unload #(cons ns %))

@@ -23,6 +23,7 @@ Progress:
 - [x] Return list of nses reloaded
 - [x] after-ns-reload
 - [x] :only :changed/:loaded/:all
+- [x] Many-to-many mapping between files and namespaces
 - [x] keep defonce
 - [ ] keep protocols?
 - [ ] keep multimethods

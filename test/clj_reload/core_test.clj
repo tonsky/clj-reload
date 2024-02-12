@@ -11,7 +11,7 @@
   (reload/read-file (PushbackReader. (StringReader. s)) nil))
 
 (deftest read-file-test
-  (is (= '[x {:depends
+  (is (= '{x {:requires
               #{a.b.c
                 a.b.d
                 a.b.e
@@ -22,7 +22,8 @@
                 a.b.j
                 a.b.k
                 a.b.l}
-              :keepers {x nil y nil}}]
+              :keep {x {:tag defonce}
+                     y {:tag defprotocol}}}}
         (read-str "(ns x
                         (:require
                           a.b.c
@@ -39,7 +40,8 @@
                       ...
                       (require 'a.b.k)
                       ...
-                      (defonce y 2)
+                      ^:clj-reload.core/keep
+                      (defprotocol y 2)
                       ...
                       (use 'a.b.l)"))))
 
@@ -52,12 +54,37 @@
         out  (StringWriter.)
         res  (binding [*out* out]
                (read-str file))]
-    (is (= '[x {:depends #{} :keepers {}}] res))
+    (is (= '{x {:requires #{}}} res))
     (is (= "Unexpected :require form: 123
 Unexpected :require form: [345]
 Unexpected :require form: [567 :as a]
 Unexpected :require form: [789 a b c]
 " (str out)))))
+
+(deftest scan-impl-test
+  (let [{files :files'
+         nses  :namespaces'} (binding [reload/*log-fn* nil]
+                               (@#'reload/scan-impl nil ["fixtures"] 0))]
+    (is (= '#{}
+          (get-in files [(io/file "fixtures/no_ns.clj") :namespaces])))
+    
+    (is (= '#{two-nses two-nses-second}
+          (get-in files [(io/file "fixtures/two_nses.clj") :namespaces])))
+    
+    (is (= '#{split}
+          (get-in files [(io/file "fixtures/split.clj") :namespaces])))
+    
+    (is (= '#{split}
+          (get-in files [(io/file "fixtures/split_part.clj") :namespaces])))
+    
+    (is (= '#{clojure.string}
+          (get-in nses ['two-nses :requires])))
+    
+    (is (= '#{clojure.set}
+          (get-in nses ['two-nses-second :requires])))
+    
+    (is (= '#{clojure.string clojure.set}
+          (get-in nses ['split :requires])))))
 
 (def *trace
   (atom []))
@@ -72,7 +99,7 @@ Unexpected :require form: [789 a b c]
     (doseq [^File file (next (file-seq (io/file "fixtures")))
             :when (> (.lastModified file) now)]
       (.setLastModified file now)))
-  (doseq [ns '[o n m l i j k f a g h d c e b]]
+  (doseq [ns '[split two-nses two-nses-second o n m l i j k f a g h d c e b]]
     (when (@@#'clojure.core/*loaded-libs* ns)
       (remove-ns ns)
       (dosync
@@ -80,7 +107,7 @@ Unexpected :require form: [789 a b c]
 
 (defn touch [sym]
   (let [now  (swap! *time + 1000)
-        file (io/file "fixtures" (str sym ".clj"))]
+        file (io/file (str "fixtures/" sym ".clj"))]
     (.setLastModified ^File file now)))
 
 (defn doeach [f xs]
@@ -88,7 +115,7 @@ Unexpected :require form: [789 a b c]
     (f x)))
 
 (defn ^File sym->file [sym]
-  (io/file "fixtures" (str (str/replace (name sym) "-" "_") ".clj")))
+  (io/file (str "fixtures/" (str/replace (name sym) "-" "_") ".clj")))
 
 (defmacro with-changed [sym content' & body]
   `(let [sym#     ~sym
@@ -231,9 +258,10 @@ Unexpected :require form: [789 a b c]
 
 (deftest reload-all-test
   (with-deleted 'err-runtime
-    (is (= '["Unloading" m n o l i j k h f g a d c e b
-             "Loading" b e c d a g f h k j i l o n m]
-          (modify {:require '[] :only :all})))))
+    (with-deleted 'two-nses
+      (is (= '["Unloading" split m n o l i j k h f g a d c e b
+               "Loading" b e c d a g f h k j i l o n m split]
+            (modify {:require '[] :only :all}))))))
 
 (deftest reload-exception-test
   (reset)
@@ -262,7 +290,7 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '["Unloading" c "Loading" c a] @*trace)))
 
-(deftest reload-ill-former-test
+(deftest reload-ill-formed-test
   (reset)
   (require 'a)
   (init)
@@ -420,6 +448,15 @@ Unexpected :require form: [789 a b c]
   (touch 'l)
   (reload)
   (is (= 100500 @@(resolve 'l/*atom))))
+
+(deftest defonce-test-2
+  (reset)
+  (require 'l)
+  (init)
+  (let [value @(resolve 'l/just-var)]
+    (touch 'l)
+    (reload)
+    (is (identical? value @(resolve 'l/just-var)))))
 
 (comment
   (test/test-ns *ns*)
