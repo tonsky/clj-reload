@@ -22,8 +22,10 @@
                 a.b.j
                 a.b.k
                 a.b.l}
-              :keep {x {:tag defonce}
-                     y {:tag defprotocol}}}}
+              :keep {x {:tag defonce
+                        :form (defonce x 1)}
+                     y {:tag defprotocol
+                        :form (defprotocol y 2)}}}}
         (read-str #ml "(ns x
                          (:require
                            a.b.c
@@ -98,17 +100,17 @@ Unexpected :require form: [789 a b c]
 (deftest patch-file-test
   (is (=  "before (def *atom 888)     after"
         (reload/patch-file
-          "before (defonce *atom 777) after" {'*atom 888})))
+          "before (defonce *atom 777) after" {'*atom "(def *atom 888)"})))
   
   (is (=  "before (def *atom 1000000) after"
         (reload/patch-file
-          "before (def *atom 1) after" {'*atom 1000000})))
+          "before (def *atom 1) after" {'*atom "(def *atom 1000000)"})))
   
   (is (=  "before (def *atom 888)
        after"
         (reload/patch-file
           "before (defonce *atom
-  777) after" {'*atom 888})))
+  777) after" {'*atom "(def *atom 888)"})))
   
   (is (=  #ml "(ns keep)
                
@@ -129,8 +131,8 @@ Unexpected :require form: [789 a b c]
                
                (defonce just-var
                  (Object.))"
-          {'*atom 777
-           'just-var 888}))))
+          {'*atom "(def *atom 777)"
+           'just-var "(def just-var 888)"}))))
 
 (def *trace
   (atom []))
@@ -496,7 +498,7 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '["Unloading" n "Loading" n m] @*trace)))
 
-(deftest defonce-test
+(deftest keep-vars-test
   (reset)
   (require 'keep)
   (init)
@@ -516,6 +518,28 @@ Unexpected :require form: [789 a b c]
     (is (= meta-var @(resolve 'keep/meta-var)))
     (is (not= normal-2 @(resolve 'keep/normal-2)))))
 
+(deftest keep-type-test
+  (reset)
+  (require 'keep)
+  (init)
+  (let [normal-new     @(resolve 'keep/type-normal-new)
+        normal-factory @(resolve 'keep/type-normal-factory)
+        keep-new       @(resolve 'keep/type-keep-new)
+        keep-factory   @(resolve 'keep/type-keep-factory)]
+    (touch 'keep)
+    (reload)
+    (is (not= normal-new @(resolve 'keep/type-normal-new)))
+    (is (not= normal-factory @(resolve 'keep/type-normal-factory)))
+    (is (not (identical? (class normal-new) (class @(resolve 'keep/type-normal-new)))))
+    (is (not (identical? (class normal-factory) (class @(resolve 'keep/type-normal-factory)))))
+    
+    (is (not (identical? keep-new @(resolve 'keep/type-keep-new))))
+    (is (not (identical? keep-factory @(resolve 'keep/type-keep-factory))))
+    (is (= keep-new @(resolve 'keep/type-keep-new)))
+    (is (= keep-factory @(resolve 'keep/type-keep-factory)))
+    (is (identical? (class keep-new) (class @(resolve 'keep/type-keep-new))))
+    (is (identical? (class keep-factory) (class @(resolve 'keep/type-keep-factory))))))
+
 (comment
   (test/test-ns *ns*)
-  (clojure.test/run-test-var #'reload-exception-test))
+  (clojure.test/run-test-var #'keep-type-test))

@@ -25,7 +25,9 @@ Progress:
 - [x] :only :changed/:loaded/:all
 - [x] Many-to-many mapping between files and namespaces
 - [x] keep defonce
-- [ ] keep protocols?
+- [x] keep deftype
+- [ ] keep defrecord
+- [ ] keep defprotocol
 - [ ] keep multimethods
 - [ ] ^:clj-reload/keep
 - [ ] reload on file change
