@@ -175,7 +175,7 @@
           
          (= 'in-ns tag)
          (let [[_ ns] (expand-quotes form)]
-           (recur ns nses))
+           (recur ns (assoc nses ns {:requires #{}})))
         
          (and (nil? ns) (#{'require 'use} tag))
          (throw (ex-info (str "Unexpected " tag " before ns definition in " file) {:form form}))
@@ -451,9 +451,6 @@
   ([opts]
    (binding [*log-fn* (:log-fn opts println)]
      (swap! *state scan opts)
-     ; (clojure.pprint/pprint (:namespaces @*state))
-     ; (println "To unload:" (:to-unload @*state))
-     ; (println "To load:" (:to-load @*state))
      (loop [unloaded []
             loaded   []
             state    @*state]

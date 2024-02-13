@@ -43,7 +43,13 @@
                       ^:clj-reload.core/keep
                       (defprotocol y 2)
                       ...
-                      (use 'a.b.l)"))))
+                      (use 'a.b.l)")))
+  
+  (is (= '{x {:requires #{}}}
+        (read-str "(ns x)")))
+  
+  (is (= '{x {:requires #{}}}
+        (read-str "(in-ns 'x)"))))
 
 (deftest read-file-errors-test
   (let [file "(ns x
@@ -244,6 +250,16 @@ Unexpected :require form: [789 a b c]
 (deftest reload-active-test
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e)))
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
+
+(deftest reload-split-test
+  (reset)
+  (require 'split)
+  (init)
+  (is (= 1 @(resolve 'split/split-part)))
+  (with-changed 'split-part "(in-ns 'split) (def split-part 2)"
+    (reload)
+    (is (= '["Unloading" split "Loading" split] @*trace))
+    (is (= 2 @(resolve 'split/split-part)))))
 
 (deftest exclude-test
   (let [opts {:require '[b e c d h g a f k j i l]}]
