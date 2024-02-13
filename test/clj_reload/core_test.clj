@@ -24,43 +24,43 @@
                 a.b.l}
               :keep {x {:tag defonce}
                      y {:tag defprotocol}}}}
-        (read-str "(ns x
-                        (:require
-                          a.b.c
-                          [a.b.d]
-                          [a.b.e :as e]
-                          [a.b f g]
-                          [a.b [h :as h]])
-                        (:require
-                          a.b.i)
-                        (:use
-                          a.b.j))
-                      ...
-                      (defonce x 1)
-                      ...
-                      (require 'a.b.k)
-                      ...
-                      ^:clj-reload.core/keep
-                      (defprotocol y 2)
-                      ...
-                      (use 'a.b.l)")))
+        (read-str #ml "(ns x
+                         (:require
+                           a.b.c
+                           [a.b.d]
+                           [a.b.e :as e]
+                           [a.b f g]
+                           [a.b [h :as h]])
+                         (:require
+                           a.b.i)
+                         (:use
+                           a.b.j))
+                       ...
+                       (defonce x 1)
+                       ...
+                       (require 'a.b.k)
+                       ...
+                       ^:clj-reload.core/keep
+                       (defprotocol y 2)
+                       ...
+                       (use 'a.b.l)")))
   
-  (is (= '{x {:requires #{}}}
+  (is (= '{x nil}
         (read-str "(ns x)")))
   
-  (is (= '{x {:requires #{}}}
+  (is (= '{x nil}
         (read-str "(in-ns 'x)"))))
 
 (deftest read-file-errors-test
-  (let [file "(ns x
-                (:require 123)
-                (:require [345])
-                (:require [567 :as a])
-                (:require [789 a b c]))"
+  (let [file #ml "(ns x
+                    (:require 123)
+                    (:require [345])
+                    (:require [567 :as a])
+                    (:require [789 a b c]))"
         out  (StringWriter.)
         res  (binding [*out* out]
                (read-str file))]
-    (is (= '{x {:requires #{}}} res))
+    (is (= '{x nil} res))
     (is (= "Unexpected :require form: 123
 Unexpected :require form: [345]
 Unexpected :require form: [567 :as a]
@@ -82,7 +82,7 @@ Unexpected :require form: [789 a b c]
     
     (is (= '#{split}
           (get-in files [(io/file "fixtures/split_part.clj") :namespaces])))
-    
+        
     (is (= '#{clojure.string}
           (get-in nses ['two-nses :requires])))
     
@@ -90,7 +90,47 @@ Unexpected :require form: [789 a b c]
           (get-in nses ['two-nses-second :requires])))
     
     (is (= '#{clojure.string clojure.set}
-          (get-in nses ['split :requires])))))
+          (get-in nses ['split :requires])))
+    
+    (is (= (io/file "fixtures/split.clj")
+          (get-in nses ['split :main-file])))))
+
+(deftest patch-file-test
+  (is (=  "before (def *atom 888)     after"
+        (reload/patch-file
+          "before (defonce *atom 777) after" {'*atom 888})))
+  
+  (is (=  "before (def *atom 1000000) after"
+        (reload/patch-file
+          "before (def *atom 1) after" {'*atom 1000000})))
+  
+  (is (=  "before (def *atom 888)
+       after"
+        (reload/patch-file
+          "before (defonce *atom
+  777) after" {'*atom 888})))
+  
+  (is (=  #ml "(ns keep)
+               
+                  asdas
+               
+               8 10  (def *atom 777)
+                            
+               
+               (def just-var 888)
+                           "
+        (reload/patch-file
+          #ml "(ns keep)
+               
+                  asdas
+               
+               8 10  (defonce *atom
+                 (atom nil))
+               
+               (defonce just-var
+                 (Object.))"
+          {'*atom 777
+           'just-var 888}))))
 
 (def *trace
   (atom []))
@@ -105,7 +145,7 @@ Unexpected :require form: [789 a b c]
     (doseq [^File file (next (file-seq (io/file "fixtures")))
             :when (> (.lastModified file) now)]
       (.setLastModified file now)))
-  (doseq [ns '[split two-nses two-nses-second o n m l i j k f a g h d c e b]]
+  (doseq [ns '[two-nses two-nses-second split keep o n m l i j k f a g h d c e b]]
     (when (@@#'clojure.core/*loaded-libs* ns)
       (remove-ns ns)
       (dosync
@@ -275,8 +315,8 @@ Unexpected :require form: [789 a b c]
 (deftest reload-all-test
   (with-deleted 'err-runtime
     (with-deleted 'two-nses
-      (is (= '["Unloading" split m n o l i j k h f g a d c e b
-               "Loading" b e c d a g f h k j i l o n m split]
+      (is (= '["Unloading" split m n o l keep i j k h f g a d c e b
+               "Loading" b e c d a g f h k j i keep l o n m split]
             (modify {:require '[] :only :all}))))))
 
 (deftest reload-exception-test
@@ -458,21 +498,23 @@ Unexpected :require form: [789 a b c]
 
 (deftest defonce-test
   (reset)
-  (require 'l)
+  (require 'keep)
   (init)
-  (reset! @(resolve 'l/*atom) 100500)
-  (touch 'l)
-  (reload)
-  (is (= 100500 @@(resolve 'l/*atom))))
-
-(deftest defonce-test-2
-  (reset)
-  (require 'l)
-  (init)
-  (let [value @(resolve 'l/just-var)]
-    (touch 'l)
+  (let [normal    @(resolve 'keep/normal)
+        atom      (reset! @(resolve 'keep/*atom) 100500)
+        just-var  @(resolve 'keep/just-var)        
+        dependent @(resolve 'keep/dependent)
+        meta-var  @(resolve 'keep/meta-var)
+        normal-2  @(resolve 'keep/normal-2)]
+    (touch 'keep)
     (reload)
-    (is (identical? value @(resolve 'l/just-var)))))
+    (is (not= normal @(resolve 'keep/normal)))
+    (is (= atom @@(resolve 'keep/*atom)))
+    (is (= just-var @(resolve 'keep/just-var)))
+    (is (= (first dependent) (first @(resolve 'keep/dependent))))
+    (is (not= (second dependent) (second @(resolve 'keep/dependent))))
+    (is (= meta-var @(resolve 'keep/meta-var)))
+    (is (not= normal-2 @(resolve 'keep/normal-2)))))
 
 (comment
   (test/test-ns *ns*)

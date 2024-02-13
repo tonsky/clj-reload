@@ -5,7 +5,7 @@
     [clojure.string :as str]
     [clojure.walk :as walk])
   (:import
-    [java.io File PushbackReader]))
+    [java.io File PushbackReader StringReader]))
 
 (def ^:dynamic *log-fn*
   println)
@@ -35,9 +35,10 @@
 ; File :: {:namespaces #{<symbol> ...}
 ;          :modified   <modified>}
 ;
-; NS   :: {:files    #{<file> ...}
-;          :requires #{<symbol> ...}
-;          :keep     {<symbol> -> Keep}}}
+; NS   :: {:main-file <file>
+;          :files     #{<file> ...}
+;          :requires  #{<symbol> ...}
+;          :keep      {<symbol> -> Keep}}}
 ;
 ; Keep :: {:tag   <symbol>
 ;          :value <any?>}
@@ -68,6 +69,14 @@
       (fn [m [k v]]
         (cond-> m (some? v) (assoc! k v)))
       (transient {}) (partition 2 args))))
+
+(defn assoc-some [m & kvs]
+  (reduce
+    (fn [m [k v]]
+      (cond-> m
+        (some? v) (assoc k v)))
+    m
+    (partition 2 kvs)))
 
 (defmacro for-map [& body]
   `(into {}
@@ -134,20 +143,20 @@
 
 (defn parse-ns-form [form]
   (let [name (second form)]
-    (loop [body    (nnext form)
-           depends (transient #{})]
+    (loop [body     (nnext form)
+           requires (transient #{})]
       (let [[form & body'] body
-            tag  (when (list? form)
-                   (first form))]
+            tag (when (list? form)
+                  (first form))]
         (cond
           (empty? body)
-          [name (persistent! depends)]
+          [name (not-empty (persistent! requires))]
           
           (#{:require :use} tag)
-          (recur body' (reduce conj! depends (parse-require-form form)))
+          (recur body' (reduce conj! requires (parse-require-form form)))
           
           :else
-          (recur body' depends))))))
+          (recur body' requires))))))
 
 (defn read-file
   "Returns {<symbol> NS} or Exception"
@@ -159,7 +168,7 @@
          (log "Failed to read" (.getPath ^File file) (.getMessage e))
          (ex-info (str "Failed to read" (.getPath ^File file)) {:file file} e)))))
   ([rdr file]
-   (loop [ns nil
+   (loop [ns   nil
           nses {}]
      (let [form (binding [*read-eval* false]
                   (read reader-opts rdr))
@@ -171,11 +180,11 @@
          
          (= 'ns tag)
          (let [[ns requires] (parse-ns-form form)]
-           (recur ns (assoc-in nses [ns :requires] requires)))
+           (recur ns (update nses ns assoc-some :requires requires :main-file file)))
           
          (= 'in-ns tag)
          (let [[_ ns] (expand-quotes form)]
-           (recur ns (assoc nses ns {:requires #{}})))
+           (recur ns (assoc nses ns nil)))
         
          (and (nil? ns) (#{'require 'use} tag))
          (throw (ex-info (str "Unexpected " tag " before ns definition in " file) {:form form}))
@@ -393,6 +402,12 @@
       :to-unload  to-unload''
       :to-load    to-load'')))
 
+(defn resolve-keepers [ns syms]
+  (for-map [[sym keep] syms
+            :let       [var (resolve (symbol (name ns) (name sym)))]
+            :when      var]
+    [sym (assoc keep :value @var)]))
+
 (defn ns-unload [ns unload-hook]
   (log "Unloading" ns)
   (try
@@ -409,10 +424,70 @@
   (dosync
     (alter @#'clojure.core/*loaded-libs* disj ns)))
 
-(defn ns-load [ns reload-hook]
-  (log "Loading" ns)
+(defn patch-file [content patch]
+  (let [rdr     (clojure.lang.LineNumberingPushbackReader.
+                  (StringReader. content))
+        patched (StringBuilder.)]
+    (loop []
+      (.captureString rdr)
+      (let [form (binding [*read-eval* false]
+                   (read reader-opts rdr))
+            text (.getString rdr)]
+        (cond
+          (= ::eof form)
+          (str patched)
+          
+          (and (list? form) (contains? patch (second form)))
+          (let [[_ sym] form
+                [_ ws]  (re-matches #"(?s)(\s*).*" text)
+                _       (.append patched ws)
+                text    (subs text (count ws))
+                lines   (str/split-lines text)
+                text'   (str "(def " sym " " (patch sym) ")")
+                text''  (if (= 1 (count lines))
+                          (if (<= (count text) (count text'))
+                            text'
+                            (str text' (str/join (repeat (- (count text) (count text')) \space))))
+                          (str text'
+                            (str/join (repeat (dec (count lines)) \newline))
+                            (str/join (repeat (count (last lines)) \space))))]
+            (.append patched text'')
+            (recur))
+          
+          :else
+          (do
+            (.append patched text)
+            (recur)))))))
+
+(defn ns-load-patched [ns ^File file keepers]
+  (let [patch    (for-map [[sym {:keys [tag value]}] keepers]
+                   [sym (symbol "clj-reload.keep" (name sym))])
+        contents (patch-file (slurp file) patch)]
+    (try
+      (binding [*ns* *ns*]
+        (in-ns 'clj-reload.keep)
+        (clojure.core/use 'clojure.core)
+        (eval (cons 'do
+                (for [[sym {:keys [tag value]}] keepers]
+                  (list 'def sym value)))))
+      
+      (Compiler/load (StringReader. contents) (.getPath file) (.getName file))
+      
+      (@#'clojure.core/throw-if (not (find-ns ns))
+        "namespace '%s' not found after loading '%s'"
+        ns (.getPath file))
+      
+      (finally
+        (remove-ns 'clj-reload.keep)
+        (dosync
+          (alter @#'clojure.core/*loaded-libs* disj 'clj-reload.keep))))))
+
+(defn ns-load [ns ^File file keepers reload-hook]
+  (log "Loading" ns "from" (.getPath file))
   (try
-    (require ns :reload) ;; map back to files, use load to load
+    (if (empty? keepers)
+      (require ns :reload)
+      (ns-load-patched ns file keepers))
     
     (when reload-hook
       (when-some [reload-fn (ns-resolve (find-ns ns) reload-hook)]
@@ -422,21 +497,6 @@
     (catch Throwable t
       (log "  failed to load" ns t)
       t)))
-
-(defn resolve-keepers [ns syms]
-  (for-map [[sym _] syms
-            :let    [var (resolve (symbol (name ns) (name sym)))]
-            :when   var]
-    [sym @var]))
-
-(defn restore-keepers [ns keepers]
-  (when-not (empty? keepers)
-    (binding [*ns* *ns*]
-      (in-ns ns)
-      (clojure.core/use 'clojure.core)
-      (eval (cons 'do
-              (for [[sym value] keepers]
-                (list 'def sym value)))))))
 
 (defn reload
   "Options:
@@ -465,9 +525,9 @@
            (recur (conj unloaded ns) loaded state'))
         
          (not-empty (:to-load state))
-         (let [[ns & to-load'] (:to-load state)]
-           (restore-keepers ns (-> state :namespaces ns :keep))
-           (if-some [ex (ns-load ns (:reload-hook state))]
+         (let [[ns & to-load'] (:to-load state)
+               file (-> state :namespaces ns :main-file)]
+           (if-some [ex (ns-load ns file (-> state :namespaces ns :keep) (:reload-hook state))]
              (do
                (swap! *state update :to-unload #(cons ns %))
                (if (:throw opts true)
