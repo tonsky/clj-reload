@@ -13,10 +13,10 @@
     (duti/start-socket-repl {:port (some-> port parse-long)})))
 
 (defn test-all []
-  (require 'clj-reload.core-test)
+  (require 'clj-reload.core-test 'clj-reload.keep-test 'clj-reload.parse-test)
   (reload)
   (duti/test-throw #"clj-reload\..*-test"))
 
 (defn -test-main [_]
-  (require 'clj-reload.core-test)
+  (require 'clj-reload.core-test 'clj-reload.keep-test 'clj-reload.parse-test)
   (duti/test-exit #"clj-reload\..*-test"))

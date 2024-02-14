@@ -432,6 +432,11 @@
     (when-not (empty? meta)
       (str "^" (pr-str (map-vals maybe-quote meta)) " "))))
 
+(defn classname [ns sym]
+  (-> (name ns)
+    (str/replace "-" "_")
+    (str "." sym)))
+
 (defmulti keep-methods (fn [tag] tag))
 
 (defmethod keep-methods :default [_]
@@ -462,7 +467,7 @@
    :patch
    (fn [ns sym keep]
      (str
-       "(clojure.core/import " ns "." sym ")"
+       "(clojure.core/import " (classname ns sym) ")"
        "(def " (meta-str (:ctor keep)) "->" sym " clj-reload.keep/->" sym ")"))})
 
 (defmethod keep-methods 'defrecord [_]
@@ -482,30 +487,35 @@
    :patch
    (fn [ns sym keep]
      (str
-       "(clojure.core/import " ns "." sym ")"
+       "(clojure.core/import " (classname ns sym) ")"
        "(def " (meta-str (:ctor keep)) "->" sym " clj-reload.keep/->" sym ")"
        "(def " (meta-str (:map-ctor keep)) "map->" sym " clj-reload.keep/map->" sym ")"))})
 
 (defmethod keep-methods 'defprotocol [_]
   {:resolve 
    (fn [ns sym keep]
-     (when-some [ctor (resolve (symbol (name ns) (str "->" sym)))]
-       (when-some [map-ctor (resolve (symbol (name ns) (str "map->" sym)))]
-         {:ctor @ctor
-          :map-ctor @map-ctor})))
+     (when-some [proto (resolve (symbol (name ns) (str "->" sym)))]
+       {:proto   proto
+        :methods (for-map [form (nnext (:form keep))
+                           :when (sequential? form)
+                           :let [[sym & _] form]]
+                   [sym (resolve (symbol (name ns) (name sym)))])}))
    
    :embed
    (fn [ns sym keep]
-     (list 'do
-       (list 'def (symbol (str "->" sym)) (:ctor keep))
-       (list 'def (symbol (str "map->" sym)) (:map-ctor keep))))
+     (list* 'do
+       (list 'def sym @(:proto keep))
+       (for [[sym method] (:methods keep)]
+         (list 'def sym @method))))
    
    :patch
    (fn [ns sym keep]
      (str
-       "(clojure.core/import " ns "." sym ")"
-       "(def ->" sym " clj-reload.keep/->" sym ")"
-       "(def map->" sym " clj-reload.keep/map->" sym ")"))})
+       "(clojure.core/import " (classname ns sym) ")"
+       "(def " (meta-str (:proto keep)) sym " clj-reload.keep/->" sym ")"
+       (str/join
+         (for [[sym method] (:methods keep)]
+           (str "(def " (meta-str method) sym "clj-reload.keep/" sym ")")))))})
 
 (defn keep-resolve [ns sym keep]
   ((:resolve (keep-methods (:tag keep))) ns sym keep))

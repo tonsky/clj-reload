@@ -5,134 +5,7 @@
     [clojure.test :refer [is are deftest testing]]
     [clj-reload.core :as reload])
   (:import
-    [java.io File PushbackReader StringReader StringWriter]))
-
-(defn read-str [s]
-  (reload/read-file (PushbackReader. (StringReader. s)) nil))
-
-(deftest read-file-test
-  (is (= '{x {:requires
-              #{a.b.c
-                a.b.d
-                a.b.e
-                a.b.f
-                a.b.g
-                a.b.h
-                a.b.i
-                a.b.j
-                a.b.k
-                a.b.l}
-              :keep {x {:tag defonce
-                        :form (defonce x 1)}
-                     y {:tag defprotocol
-                        :form (defprotocol y 2)}}}}
-        (read-str #ml "(ns x
-                         (:require
-                           a.b.c
-                           [a.b.d]
-                           [a.b.e :as e]
-                           [a.b f g]
-                           [a.b [h :as h]])
-                         (:require
-                           a.b.i)
-                         (:use
-                           a.b.j))
-                       ...
-                       (defonce x 1)
-                       ...
-                       (require 'a.b.k)
-                       ...
-                       ^:clj-reload.core/keep
-                       (defprotocol y 2)
-                       ...
-                       (use 'a.b.l)")))
-  
-  (is (= '{x nil}
-        (read-str "(ns x)")))
-  
-  (is (= '{x nil}
-        (read-str "(in-ns 'x)"))))
-
-(deftest read-file-errors-test
-  (let [file #ml "(ns x
-                    (:require 123)
-                    (:require [345])
-                    (:require [567 :as a])
-                    (:require [789 a b c]))"
-        out  (StringWriter.)
-        res  (binding [*out* out]
-               (read-str file))]
-    (is (= '{x nil} res))
-    (is (= "Unexpected :require form: 123
-Unexpected :require form: [345]
-Unexpected :require form: [567 :as a]
-Unexpected :require form: [789 a b c]
-" (str out)))))
-
-(deftest scan-impl-test
-  (let [{files :files'
-         nses  :namespaces'} (binding [reload/*log-fn* nil]
-                               (@#'reload/scan-impl nil ["fixtures"] 0))]
-    (is (= '#{}
-          (get-in files [(io/file "fixtures/no_ns.clj") :namespaces])))
-    
-    (is (= '#{two-nses two-nses-second}
-          (get-in files [(io/file "fixtures/two_nses.clj") :namespaces])))
-    
-    (is (= '#{split}
-          (get-in files [(io/file "fixtures/split.clj") :namespaces])))
-    
-    (is (= '#{split}
-          (get-in files [(io/file "fixtures/split_part.clj") :namespaces])))
-        
-    (is (= '#{clojure.string}
-          (get-in nses ['two-nses :requires])))
-    
-    (is (= '#{clojure.set}
-          (get-in nses ['two-nses-second :requires])))
-    
-    (is (= '#{clojure.string clojure.set}
-          (get-in nses ['split :requires])))
-    
-    (is (= (io/file "fixtures/split.clj")
-          (get-in nses ['split :main-file])))))
-
-(deftest patch-file-test
-  (is (=  "before (def *atom 888)     after"
-        (reload/patch-file
-          "before (defonce *atom 777) after" {'*atom "(def *atom 888)"})))
-  
-  (is (=  "before (def *atom 1000000) after"
-        (reload/patch-file
-          "before (def *atom 1) after" {'*atom "(def *atom 1000000)"})))
-  
-  (is (=  "before (def *atom 888)
-       after"
-        (reload/patch-file
-          "before (defonce *atom
-  777) after" {'*atom "(def *atom 888)"})))
-  
-  (is (=  #ml "(ns keep)
-               
-                  asdas
-               
-               8 10  (def *atom 777)
-                            
-               
-               (def just-var 888)
-                           "
-        (reload/patch-file
-          #ml "(ns keep)
-               
-                  asdas
-               
-               8 10  (defonce *atom
-                 (atom nil))
-               
-               (defonce just-var
-                 (Object.))"
-          {'*atom "(def *atom 777)"
-           'just-var "(def just-var 888)"}))))
+    [java.io File]))
 
 (def *trace
   (atom []))
@@ -140,30 +13,40 @@ Unexpected :require form: [789 a b c]
 (def *time
   (atom (System/currentTimeMillis)))
 
-(defn reset []
+(def ^:dynamic *dir*
+  "fixtures")
+
+(defn reset [& nses]
   (reset! *trace [])
   (let [now (System/currentTimeMillis)]
     (reset! *time now)
-    (doseq [^File file (next (file-seq (io/file "fixtures")))
+    (doseq [^File file (next (file-seq (io/file *dir*)))
             :when (> (.lastModified file) now)]
       (.setLastModified file now)))
-  (doseq [ns '[two-nses two-nses-second split keep o n m l i j k f a g h d c e b]]
+  (doseq [ns (or nses '[two-nses-second two-nses split o n m l i j k f a g h d c e b])]
     (when (@@#'clojure.core/*loaded-libs* ns)
       (remove-ns ns)
       (dosync
         (alter @#'clojure.core/*loaded-libs* disj ns)))))
 
+(defn ^File sym->file [sym]
+  (-> sym
+    name
+    (str/replace "-" "_")
+    (str/replace "." "/")
+    (str ".clj")
+    (->>
+      (str *dir* "/")
+      (io/file))))
+
 (defn touch [sym]
   (let [now  (swap! *time + 1000)
-        file (io/file (str "fixtures/" sym ".clj"))]
+        file (sym->file sym)]
     (.setLastModified ^File file now)))
 
 (defn doeach [f xs]
   (doseq [x xs]
     (f x)))
-
-(defn ^File sym->file [sym]
-  (io/file (str "fixtures/" (str/replace (name sym) "-" "_") ".clj")))
 
 (defmacro with-changed [sym content' & body]
   `(let [sym#     ~sym
@@ -204,7 +87,7 @@ Unexpected :require form: [789 a b c]
   ([opts]
    (reload/init
      (merge
-       {:dirs ["fixtures"]}
+       {:dirs [*dir*]}
        opts))))
 
 (defn reload
@@ -316,10 +199,9 @@ Unexpected :require form: [789 a b c]
 
 (deftest reload-all-test
   (with-deleted 'err-runtime
-    (with-deleted 'two-nses
-      (is (= '["Unloading" split m n o l keep i j k h f g a d c e b
-               "Loading" b e c d a g f h k j i keep l o n m split]
-            (modify {:require '[] :only :all}))))))
+    (is (= '["Unloading" two-nses-second two-nses split m n o l i j k h f g a d c e b
+             "Loading" b e c d a g f h k j i l o n m split two-nses two-nses-second]
+          (modify {:require '[] :only :all})))))
 
 (deftest reload-exception-test
   (reset)
@@ -497,111 +379,6 @@ Unexpected :require form: [789 a b c]
   (reset! *trace [])
   (reload)
   (is (= '["Unloading" n "Loading" n m] @*trace)))
-
-(defn meta= [a b]
-  (= (dissoc (meta a) :ns) (dissoc (meta b) :ns)))
-
-(deftest keep-vars-test
-  (reset)
-  (require 'keep)
-  (init)
-  (let [normal     @(resolve 'keep/normal)
-        atom       (reset! @(resolve 'keep/*atom) 100500)
-        just-var   @(resolve 'keep/just-var)
-        dependent  @(resolve 'keep/dependent)
-        meta-var   (resolve 'keep/meta-var)
-        public-fn  (resolve 'keep/public-fn)
-        private-fn (resolve 'keep/private-fn)
-        normal-2   @(resolve 'keep/normal-2)]
-    (touch 'keep)
-    (reload)
-    (is (not= normal @(resolve 'keep/normal)))
-    (is (= atom @@(resolve 'keep/*atom)))
-    (is (= just-var @(resolve 'keep/just-var)))
-    (is (= (first dependent) (first @(resolve 'keep/dependent))))
-    (is (not= (second dependent) (second @(resolve 'keep/dependent))))
-    
-    (is (= @meta-var @(resolve 'keep/meta-var)))
-    (is (meta= meta-var (resolve 'keep/meta-var)))
-    
-    (is (= @public-fn) @(resolve 'keep/public-fn))
-    (is (meta= public-fn (resolve 'keep/public-fn)))
-    
-    (is (= @private-fn) @(resolve 'keep/private-fn))
-    (is (meta= private-fn (resolve 'keep/private-fn)))
-    
-    (is (not= normal-2 @(resolve 'keep/normal-2)))))
-
-(deftest keep-type-test
-  (reset)
-  (require 'keep)
-  (init)
-  (let [normal-new     @(resolve 'keep/type-normal-new)
-        normal-factory @(resolve 'keep/type-normal-factory)
-        keep-new       @(resolve 'keep/type-keep-new)
-        keep-factory   @(resolve 'keep/type-keep-factory)]
-    (touch 'keep)
-    (reload)
-    (is (not= normal-new @(resolve 'keep/type-normal-new)))
-    (is (not (identical? (class normal-new) (class @(resolve 'keep/type-normal-new)))))
-    
-    (is (not= normal-factory @(resolve 'keep/type-normal-factory)))
-    (is (not (identical? (class normal-factory) (class @(resolve 'keep/type-normal-factory)))))
-    
-    (is (not (identical? keep-new @(resolve 'keep/type-keep-new))))
-    (is (= keep-new @(resolve 'keep/type-keep-new)))
-    (is (identical? (class keep-new) (class @(resolve 'keep/type-keep-new))))
-
-    (is (not (identical? keep-factory @(resolve 'keep/type-keep-factory))))
-    (is (= keep-factory @(resolve 'keep/type-keep-factory)))
-    (is (identical? (class keep-factory) (class @(resolve 'keep/type-keep-factory))))))
-
-(deftest keep-record-test
-  (reset)
-  (require 'keep)
-  (init)
-  (let [normal-new         @(resolve 'keep/record-normal-new)
-        normal-factory     @(resolve 'keep/record-normal-factory)
-        normal-map-factory @(resolve 'keep/record-normal-map-factory)
-        keep-new           @(resolve 'keep/record-keep-new)
-        keep-factory       @(resolve 'keep/record-keep-factory)
-        keep-map-factory   @(resolve 'keep/record-keep-map-factory)]
-    (touch 'keep)
-    (reload)
-    (is (not= normal-new @(resolve 'keep/record-normal-new)))
-    (is (not (identical? (class normal-new) (class @(resolve 'keep/record-normal-new)))))
-    
-    (is (not= normal-factory @(resolve 'keep/record-normal-factory)))
-    (is (not (identical? (class normal-factory) (class @(resolve 'keep/record-normal-factory)))))
-    
-    (is (not= normal-map-factory @(resolve 'keep/record-normal-map-factory)))
-    (is (not (identical? (class normal-map-factory) (class @(resolve 'keep/record-normal-map-factory)))))
-    
-    (is (not (identical? keep-new @(resolve 'keep/record-keep-new))))
-    (is (= keep-new @(resolve 'keep/record-keep-new)))
-    (is (identical? (class keep-new) (class @(resolve 'keep/record-keep-new))))
-
-    (is (not (identical? keep-factory @(resolve 'keep/record-keep-factory))))
-    (is (= keep-factory @(resolve 'keep/record-keep-factory)))
-    (is (identical? (class keep-factory) (class @(resolve 'keep/record-keep-factory))))
-    
-    (is (not (identical? keep-map-factory @(resolve 'keep/record-keep-map-factory))))
-    (is (= keep-map-factory @(resolve 'keep/record-keep-map-factory)))
-    (is (identical? (class keep-map-factory) (class @(resolve 'keep/record-keep-map-factory))))))
-
-(defmethod reload/keep-methods 'deftype+ [tag]
-  (reload/keep-methods 'deftype))
-
-(deftest keep-custom-def-test
-  (reset)
-  (require 'keep)
-  (init)
-  (let [ctor  @(resolve 'keep/->CustomTypeKeep)
-        value @(resolve 'keep/custom-type-keep)]
-    (touch 'keep)
-    (reload)
-    (is (identical? ctor @(resolve 'keep/->CustomTypeKeep)))
-    (is (identical? (class value) (class @(resolve 'keep/custom-type-keep))))))
 
 (comment
   (test/test-ns *ns*)
