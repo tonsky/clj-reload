@@ -403,37 +403,92 @@
       :to-unload  to-unload''
       :to-load    to-load'')))
 
-(defn resolve-keep [ns sym keep]
-  (condp contains? (:tag keep)
-    '#{def defn defn- defonce}
-    (when-some [var (resolve (symbol (name ns) (name sym)))]
-      {:value @var})
-    
-    '#{deftype}
-    (when-some [var (resolve (symbol (name ns) (str "->" sym)))]
-      {:ctor @var})))
+(defmulti keep-methods (fn [tag] tag))
 
-(defn keep->embed [ns sym keep]
-  (condp contains? (:tag keep)
-    '#{def defn defn- defonce}
-    (list 'def sym (:value keep))
-    
-    '#{deftype}
-    (list 'def (symbol (str "->" sym)) (:ctor keep))))
+(defmethod keep-methods :default [_]
+  {:resolve 
+   (fn [ns sym keep]
+     (when-some [var (resolve (symbol (name ns) (name sym)))]
+       {:value @var}))
+   
+   :embed
+   (fn [ns sym keep]
+     (list 'def sym (:value keep)))
+   
+   :patch
+   (fn [ns sym keep]
+     (str "(def " sym " clj-reload.keep/" sym ")"))})
 
-(defn keep->patch [ns sym keep]
-  (condp contains? (:tag keep)
-    '#{def defn defn- defonce}
-    (str "(def " sym " clj-reload.keep/" sym ")")
-    
-    '#{deftype}
-    (str
-      "(clojure.core/import " ns "." sym ")"
-      "(def ->" sym " clj-reload.keep/->" sym ")")))
+(defmethod keep-methods 'deftype [_]
+  {:resolve 
+   (fn [ns sym keep]
+     (when-some [ctor (resolve (symbol (name ns) (str "->" sym)))]
+       {:ctor @ctor}))
+   
+   :embed
+   (fn [ns sym keep]
+     (list 'def (symbol (str "->" sym)) (:ctor keep)))
+   
+   :patch
+   (fn [ns sym keep]
+     (str
+       "(clojure.core/import " ns "." sym ")"
+       "(def ->" sym " clj-reload.keep/->" sym ")"))})
+
+(defmethod keep-methods 'defrecord [_]
+  {:resolve 
+   (fn [ns sym keep]
+     (when-some [ctor (resolve (symbol (name ns) (str "->" sym)))]
+       (when-some [map-ctor (resolve (symbol (name ns) (str "map->" sym)))]
+         {:ctor @ctor
+          :map-ctor @map-ctor})))
+   
+   :embed
+   (fn [ns sym keep]
+     (list 'do
+       (list 'def (symbol (str "->" sym)) (:ctor keep))
+       (list 'def (symbol (str "map->" sym)) (:map-ctor keep))))
+   
+   :patch
+   (fn [ns sym keep]
+     (str
+       "(clojure.core/import " ns "." sym ")"
+       "(def ->" sym " clj-reload.keep/->" sym ")"
+       "(def map->" sym " clj-reload.keep/map->" sym ")"))})
+
+(defmethod keep-methods 'defprotocol [_]
+  {:resolve 
+   (fn [ns sym keep]
+     (when-some [ctor (resolve (symbol (name ns) (str "->" sym)))]
+       (when-some [map-ctor (resolve (symbol (name ns) (str "map->" sym)))]
+         {:ctor @ctor
+          :map-ctor @map-ctor})))
+   
+   :embed
+   (fn [ns sym keep]
+     (list 'do
+       (list 'def (symbol (str "->" sym)) (:ctor keep))
+       (list 'def (symbol (str "map->" sym)) (:map-ctor keep))))
+   
+   :patch
+   (fn [ns sym keep]
+     (str
+       "(clojure.core/import " ns "." sym ")"
+       "(def ->" sym " clj-reload.keep/->" sym ")"
+       "(def map->" sym " clj-reload.keep/map->" sym ")"))})
+
+(defn keep-resolve [ns sym keep]
+  ((:resolve (keep-methods (:tag keep))) ns sym keep))
+
+(defn keep-embed [ns sym keep]
+  ((:embed (keep-methods (:tag keep))) ns sym keep))
+
+(defn keep-patch [ns sym keep]
+  ((:patch (keep-methods (:tag keep))) ns sym keep))
 
 (defn resolve-keeps [ns syms]
   (for-map [[sym keep] syms
-            :let  [resolved (resolve-keep ns sym keep)]
+            :let  [resolved (keep-resolve ns sym keep)]
             :when resolved]
     [sym (merge keep resolved)]))
 
@@ -496,11 +551,11 @@
       (clojure.core/use 'clojure.core)
       (eval (cons 'do
               (map (fn [[sym keep]]
-                     (keep->embed ns sym keep)) keeps))))
+                     (keep-embed ns sym keep)) keeps))))
     
     ;; replace keeps in file with refs to clj-reload.keep
     (let [patch    (for-map [[sym keep] keeps]
-                     [sym (keep->patch ns sym keep)])
+                     [sym (keep-patch ns sym keep)])
           contents (patch-file (slurp file) patch)]
       ;; load modified file
       (Compiler/load (StringReader. contents) (.getPath file) (.getName file)))

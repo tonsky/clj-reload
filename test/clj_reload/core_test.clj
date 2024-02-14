@@ -529,16 +529,65 @@ Unexpected :require form: [789 a b c]
     (touch 'keep)
     (reload)
     (is (not= normal-new @(resolve 'keep/type-normal-new)))
-    (is (not= normal-factory @(resolve 'keep/type-normal-factory)))
     (is (not (identical? (class normal-new) (class @(resolve 'keep/type-normal-new)))))
+    
+    (is (not= normal-factory @(resolve 'keep/type-normal-factory)))
     (is (not (identical? (class normal-factory) (class @(resolve 'keep/type-normal-factory)))))
     
     (is (not (identical? keep-new @(resolve 'keep/type-keep-new))))
-    (is (not (identical? keep-factory @(resolve 'keep/type-keep-factory))))
     (is (= keep-new @(resolve 'keep/type-keep-new)))
-    (is (= keep-factory @(resolve 'keep/type-keep-factory)))
     (is (identical? (class keep-new) (class @(resolve 'keep/type-keep-new))))
+
+    (is (not (identical? keep-factory @(resolve 'keep/type-keep-factory))))
+    (is (= keep-factory @(resolve 'keep/type-keep-factory)))
     (is (identical? (class keep-factory) (class @(resolve 'keep/type-keep-factory))))))
+
+(deftest keep-record-test
+  (reset)
+  (require 'keep)
+  (init)
+  (let [normal-new         @(resolve 'keep/record-normal-new)
+        normal-factory     @(resolve 'keep/record-normal-factory)
+        normal-map-factory @(resolve 'keep/record-normal-map-factory)
+        keep-new           @(resolve 'keep/record-keep-new)
+        keep-factory       @(resolve 'keep/record-keep-factory)
+        keep-map-factory   @(resolve 'keep/record-keep-map-factory)]
+    (touch 'keep)
+    (reload)
+    (is (not= normal-new @(resolve 'keep/record-normal-new)))
+    (is (not (identical? (class normal-new) (class @(resolve 'keep/record-normal-new)))))
+    
+    (is (not= normal-factory @(resolve 'keep/record-normal-factory)))
+    (is (not (identical? (class normal-factory) (class @(resolve 'keep/record-normal-factory)))))
+    
+    (is (not= normal-map-factory @(resolve 'keep/record-normal-map-factory)))
+    (is (not (identical? (class normal-map-factory) (class @(resolve 'keep/record-normal-map-factory)))))
+    
+    (is (not (identical? keep-new @(resolve 'keep/record-keep-new))))
+    (is (= keep-new @(resolve 'keep/record-keep-new)))
+    (is (identical? (class keep-new) (class @(resolve 'keep/record-keep-new))))
+
+    (is (not (identical? keep-factory @(resolve 'keep/record-keep-factory))))
+    (is (= keep-factory @(resolve 'keep/record-keep-factory)))
+    (is (identical? (class keep-factory) (class @(resolve 'keep/record-keep-factory))))
+    
+    (is (not (identical? keep-map-factory @(resolve 'keep/record-keep-map-factory))))
+    (is (= keep-map-factory @(resolve 'keep/record-keep-map-factory)))
+    (is (identical? (class keep-map-factory) (class @(resolve 'keep/record-keep-map-factory))))))
+
+(defmethod reload/keep-methods 'deftype+ [tag]
+  (reload/keep-methods 'deftype))
+
+(deftest keep-custom-def-test
+  (reset)
+  (require 'keep)
+  (init)
+  (let [ctor  @(resolve 'keep/->CustomTypeKeep)
+        value @(resolve 'keep/custom-type-keep)]
+    (touch 'keep)
+    (reload)
+    (is (identical? ctor @(resolve 'keep/->CustomTypeKeep)))
+    (is (identical? (class value) (class @(resolve 'keep/custom-type-keep))))))
 
 (comment
   (test/test-ns *ns*)

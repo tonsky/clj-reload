@@ -26,10 +26,11 @@ Progress:
 - [x] Many-to-many mapping between files and namespaces
 - [x] keep defonce
 - [x] keep deftype
-- [ ] keep defrecord
+- [x] keep defrecord
 - [ ] keep defprotocol
 - [ ] keep multimethods
-- [ ] ^:clj-reload/keep
+- [x] ^:clj-reload/keep
+- [x] custom keep forms handler
 - [ ] reload on file change
 - [ ] ? Try to keep aliases working
 - [ ] ? Get dependencies from live ns objects
