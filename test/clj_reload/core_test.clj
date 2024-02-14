@@ -498,16 +498,21 @@ Unexpected :require form: [789 a b c]
   (reload)
   (is (= '["Unloading" n "Loading" n m] @*trace)))
 
+(defn meta= [a b]
+  (= (dissoc (meta a) :ns) (dissoc (meta b) :ns)))
+
 (deftest keep-vars-test
   (reset)
   (require 'keep)
   (init)
-  (let [normal    @(resolve 'keep/normal)
-        atom      (reset! @(resolve 'keep/*atom) 100500)
-        just-var  @(resolve 'keep/just-var)        
-        dependent @(resolve 'keep/dependent)
-        meta-var  @(resolve 'keep/meta-var)
-        normal-2  @(resolve 'keep/normal-2)]
+  (let [normal     @(resolve 'keep/normal)
+        atom       (reset! @(resolve 'keep/*atom) 100500)
+        just-var   @(resolve 'keep/just-var)
+        dependent  @(resolve 'keep/dependent)
+        meta-var   (resolve 'keep/meta-var)
+        public-fn  (resolve 'keep/public-fn)
+        private-fn (resolve 'keep/private-fn)
+        normal-2   @(resolve 'keep/normal-2)]
     (touch 'keep)
     (reload)
     (is (not= normal @(resolve 'keep/normal)))
@@ -515,7 +520,16 @@ Unexpected :require form: [789 a b c]
     (is (= just-var @(resolve 'keep/just-var)))
     (is (= (first dependent) (first @(resolve 'keep/dependent))))
     (is (not= (second dependent) (second @(resolve 'keep/dependent))))
-    (is (= meta-var @(resolve 'keep/meta-var)))
+    
+    (is (= @meta-var @(resolve 'keep/meta-var)))
+    (is (meta= meta-var (resolve 'keep/meta-var)))
+    
+    (is (= @public-fn) @(resolve 'keep/public-fn))
+    (is (meta= public-fn (resolve 'keep/public-fn)))
+    
+    (is (= @private-fn) @(resolve 'keep/private-fn))
+    (is (meta= private-fn (resolve 'keep/private-fn)))
+    
     (is (not= normal-2 @(resolve 'keep/normal-2)))))
 
 (deftest keep-type-test

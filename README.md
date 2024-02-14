@@ -31,6 +31,7 @@ Progress:
 - [ ] keep multimethods
 - [x] ^:clj-reload/keep
 - [x] custom keep forms handler
+- [x] keep var meta
 - [ ] reload on file change
 - [ ] ? Try to keep aliases working
 - [ ] ? Get dependencies from live ns objects

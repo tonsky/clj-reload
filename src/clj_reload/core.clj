@@ -78,6 +78,19 @@
     m
     (partition 2 kvs)))
 
+(defn update-some [m k f & args]
+  (if (contains? m k)
+    (apply update m k f args)
+    m))
+
+(defn map-vals [f m]
+  (when (some? m)
+    (persistent!
+      (reduce-kv
+        #(assoc! %1 %2 (f %3))
+        (transient (empty m))
+        m))))
+
 (defmacro for-map [& body]
   `(into {}
      (for ~@body)))
@@ -403,58 +416,75 @@
       :to-unload  to-unload''
       :to-load    to-load'')))
 
+(defn- maybe-quote [form]
+  (cond
+    (symbol? form)
+    (list 'quote form)
+   
+    (and (sequential? form) (not (vector? form)))
+    (list 'quote form)
+   
+    :else
+    form))
+
+(defn meta-str [var]
+  (let [meta (dissoc (meta var) :ns :file :line :column :name)]
+    (when-not (empty? meta)
+      (str "^" (pr-str (map-vals maybe-quote meta)) " "))))
+
 (defmulti keep-methods (fn [tag] tag))
 
 (defmethod keep-methods :default [_]
   {:resolve 
    (fn [ns sym keep]
      (when-some [var (resolve (symbol (name ns) (name sym)))]
-       {:value @var}))
+       {:var var}))
    
    :embed
    (fn [ns sym keep]
-     (list 'def sym (:value keep)))
+     (list 'def sym @(:var keep)))
    
    :patch
    (fn [ns sym keep]
-     (str "(def " sym " clj-reload.keep/" sym ")"))})
+     (str
+       "(def " (meta-str (:var keep)) sym " clj-reload.keep/" sym ")"))})
 
 (defmethod keep-methods 'deftype [_]
   {:resolve 
    (fn [ns sym keep]
      (when-some [ctor (resolve (symbol (name ns) (str "->" sym)))]
-       {:ctor @ctor}))
+       {:ctor ctor}))
    
    :embed
    (fn [ns sym keep]
-     (list 'def (symbol (str "->" sym)) (:ctor keep)))
+     (list 'def (symbol (str "->" sym)) @(:ctor keep)))
    
    :patch
    (fn [ns sym keep]
      (str
        "(clojure.core/import " ns "." sym ")"
-       "(def ->" sym " clj-reload.keep/->" sym ")"))})
+       "(def " (meta-str (:ctor keep)) "->" sym " clj-reload.keep/->" sym ")"))})
 
 (defmethod keep-methods 'defrecord [_]
   {:resolve 
    (fn [ns sym keep]
      (when-some [ctor (resolve (symbol (name ns) (str "->" sym)))]
        (when-some [map-ctor (resolve (symbol (name ns) (str "map->" sym)))]
-         {:ctor @ctor
-          :map-ctor @map-ctor})))
+         {:ctor ctor
+          :map-ctor map-ctor})))
    
    :embed
    (fn [ns sym keep]
      (list 'do
-       (list 'def (symbol (str "->" sym)) (:ctor keep))
-       (list 'def (symbol (str "map->" sym)) (:map-ctor keep))))
+       (list 'def (symbol (str "->" sym)) @(:ctor keep))
+       (list 'def (symbol (str "map->" sym)) @(:map-ctor keep))))
    
    :patch
    (fn [ns sym keep]
      (str
        "(clojure.core/import " ns "." sym ")"
-       "(def ->" sym " clj-reload.keep/->" sym ")"
-       "(def map->" sym " clj-reload.keep/map->" sym ")"))})
+       "(def " (meta-str (:ctor keep)) "->" sym " clj-reload.keep/->" sym ")"
+       "(def " (meta-str (:map-ctor keep)) "map->" sym " clj-reload.keep/map->" sym ")"))})
 
 (defmethod keep-methods 'defprotocol [_]
   {:resolve 
@@ -543,6 +573,11 @@
             (.append patched text)
             (recur)))))))
 
+(defn ns-load-file [content ns ^File file]
+  (let [[_ ext] (re-matches #".*\.([^.]+)" (.getName file))
+        path    (-> ns str (str/replace #"\-" "_") (str/replace #"\." "/") (str "." ext))]
+    (Compiler/load (StringReader. content) path (.getName file))))
+
 (defn ns-load-patched [ns ^File file keeps]
   (try
     ;; stash keeps in clj-reload.keep
@@ -554,11 +589,12 @@
                      (keep-embed ns sym keep)) keeps))))
     
     ;; replace keeps in file with refs to clj-reload.keep
-    (let [patch    (for-map [[sym keep] keeps]
-                     [sym (keep-patch ns sym keep)])
-          contents (patch-file (slurp file) patch)]
+    (let [patch   (for-map [[sym keep] keeps]
+                    [sym (keep-patch ns sym keep)])
+          content (patch-file (slurp file) patch)]
+      ; (println content)
       ;; load modified file
-      (Compiler/load (StringReader. contents) (.getPath file) (.getName file)))
+      (ns-load-file content ns file))
     
     ;; check 
     (@#'clojure.core/throw-if (not (find-ns ns))
@@ -575,7 +611,7 @@
   (log "Loading" ns "from" (.getPath file))
   (try
     (if (empty? keeps)
-      (require ns :reload)
+      (ns-load-file (slurp file) ns file)
       (ns-load-patched ns file keeps))
     
     (when reload-hook

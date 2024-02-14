@@ -15,8 +15,14 @@
   [just-var (rand-int Integer/MAX_VALUE)])
 
 ^:clj-reload.core/keep
-(def meta-var
+(def ^{:k :v} meta-var
   (rand-int Integer/MAX_VALUE))
+
+^:clj-reload.core/keep
+(defn public-fn [a])
+
+^:clj-reload.core/keep
+(defn- ^String private-fn [a b c])
 
 ;; deftype
 
