@@ -12,7 +12,7 @@
       'clj-reload.keep-test.keep-defprotocol
       'clj-reload.keep-test.keep-defrecord
       'clj-reload.keep-test.keep-deftype
-      'clj-reload.keep-test.keep-normal)
+      'clj-reload.keep-test.keep-vars)
     (f)))
 
 (use-fixtures :each wrap-test)
@@ -20,17 +20,25 @@
 (deftest patch-file-test
   (is (=  "before (def *atom 888)     after"
         (reload/patch-file
-          "before (defonce *atom 777) after" {'*atom "(def *atom 888)"})))
+          "before (defonce *atom 777) after"
+          {'(defonce *atom) "(def *atom 888)"})))
   
   (is (=  "before (def *atom 1000000) after"
         (reload/patch-file
-          "before (def *atom 1) after" {'*atom "(def *atom 1000000)"})))
+          "before (def *atom 1) after"
+          {'(def *atom) "(def *atom 1000000)"})))
   
   (is (=  "before (def *atom 888)
        after"
         (reload/patch-file
           "before (defonce *atom
-  777) after" {'*atom "(def *atom 888)"})))
+  777) after"
+          {'(defonce *atom) "(def *atom 888)"})))
+  
+  (is (=  "before (def *atom 888) (reset! *atom nil) after"
+        (reload/patch-file
+          "before (def *atom 777) (reset! *atom nil) after"
+          {'(def *atom) "(def *atom 888)"})))
   
   (is (=  #ml "(ns keep)
                
@@ -51,16 +59,16 @@
                
                (defonce just-var
                  (Object.))"
-          {'*atom "(def *atom 777)"
-           'just-var "(def just-var 888)"}))))
+          {'(defonce *atom) "(def *atom 777)"
+           '(defonce just-var) "(def just-var 888)"}))))
 
 (defn meta= [a b]
   (= (dissoc (meta a) :ns) (dissoc (meta b) :ns)))
 
 (deftest keep-vars-test
-  (require 'clj-reload.keep-test.keep-normal)
+  (require 'clj-reload.keep-test.keep-vars)
   (core-test/init)
-  (let [ns         (find-ns 'clj-reload.keep-test.keep-normal)
+  (let [ns         (find-ns 'clj-reload.keep-test.keep-vars)
         normal     @(ns-resolve ns 'normal)
         atom       (reset! @(ns-resolve ns '*atom) 100500)
         just-var   @(ns-resolve ns 'just-var)
@@ -70,9 +78,9 @@
         private-fn (ns-resolve ns 'private-fn)
         normal-2   @(ns-resolve ns 'normal-2)
         
-        _          (core-test/touch 'clj-reload.keep-test.keep-normal)
+        _          (core-test/touch 'clj-reload.keep-test.keep-vars)
         _          (core-test/reload)
-        ns'        (find-ns 'clj-reload.keep-test.keep-normal)]
+        ns'        (find-ns 'clj-reload.keep-test.keep-vars)]
     
     (is (not= normal @(ns-resolve ns' 'normal)))
     (is (= atom @@(ns-resolve ns' '*atom)))
@@ -164,6 +172,79 @@
         ns'   (find-ns 'clj-reload.keep-test.keep-custom)]
     (is (identical? ctor @(ns-resolve ns' '->CustomTypeKeep)))
     (is (identical? (class value) (class @(ns-resolve ns' 'custom-type-keep))))))
+
+(deftest keep-protocol-test
+  (require 'clj-reload.keep-test.keep-defprotocol)
+  (core-test/init)
+  (let [ns                (find-ns 'clj-reload.keep-test.keep-defprotocol)
+        proto             @(ns-resolve ns 'IProto)
+        method            @(ns-resolve ns '-method)
+        rec-inline        @(ns-resolve ns 'rec-inline)
+        rec-extend-proto  @(ns-resolve ns 'rec-extend-proto)
+        rec-extend-type   @(ns-resolve ns 'rec-extend-type)
+        rec-extend        @(ns-resolve ns 'rec-extend)
+        extend-meta       @(ns-resolve ns 'extend-meta)
+        
+        _       (core-test/touch 'clj-reload.keep-test.keep-defprotocol)
+        _       (core-test/reload)
+        
+        ns'               (find-ns 'clj-reload.keep-test.keep-defprotocol)
+        proto'            @(ns-resolve ns' 'IProto)
+        method'           @(ns-resolve ns' '-method)
+        rec-inline'       @(ns-resolve ns' 'rec-inline)
+        rec-extend-proto' @(ns-resolve ns' 'rec-extend-proto)
+        rec-extend-type'  @(ns-resolve ns' 'rec-extend-type)
+        rec-extend'       @(ns-resolve ns' 'rec-extend)
+        extend-meta'      @(ns-resolve ns' 'extend-meta)]
+    
+    ;; make sure reload happened
+    (is (not (identical? rec-inline rec-inline')))
+    (is (not (identical? (class rec-inline) (class rec-inline'))))
+    
+    (is (satisfies? proto rec-inline))
+    (is (satisfies? proto rec-inline'))    
+    (is (satisfies? proto' rec-inline))
+    (is (satisfies? proto' rec-inline'))
+    (is (= :rec-inline (method rec-inline)))
+    (is (= :rec-inline (method rec-inline')))
+    (is (= :rec-inline (method' rec-inline)))
+    (is (= :rec-inline (method' rec-inline')))
+    
+    (is (satisfies? proto rec-extend-proto))
+    ; (is (satisfies? proto rec-extend-proto'))
+    (is (satisfies? proto' rec-extend-proto))
+    (is (satisfies? proto' rec-extend-proto'))
+    (is (= :rec-extend-proto (method rec-extend-proto)))
+    ; (is (= :rec-extend-proto (method rec-extend-proto')))
+    (is (= :rec-extend-proto (method' rec-extend-proto)))
+    (is (= :rec-extend-proto (method' rec-extend-proto')))
+    
+    (is (satisfies? proto rec-extend-type))
+    ; (is (satisfies? proto rec-extend-type'))
+    (is (satisfies? proto' rec-extend-type))
+    (is (satisfies? proto' rec-extend-type'))
+    (is (= :rec-extend-type (method rec-extend-type)))
+    ; (is (= :rec-extend-type (method rec-extend-type')))
+    (is (= :rec-extend-type (method' rec-extend-type)))
+    (is (= :rec-extend-type (method' rec-extend-type')))
+    
+    (is (satisfies? proto rec-extend))
+    ; (is (satisfies? proto rec-extend'))
+    (is (satisfies? proto' rec-extend))
+    (is (satisfies? proto' rec-extend'))
+    (is (= :rec-extend (method rec-extend)))
+    ; (is (= :rec-extend (method rec-extend')))
+    (is (= :rec-extend (method' rec-extend)))
+    (is (= :rec-extend (method' rec-extend')))
+    
+    ; (is (satisfies? proto extend-meta))
+    ; (is (satisfies? proto extend-meta'))
+    ; (is (satisfies? proto' extend-meta))
+    ; (is (satisfies? proto' extend-meta'))
+    (is (= :extend-meta (method extend-meta)))
+    (is (= :extend-meta (method extend-meta')))
+    (is (= :extend-meta (method' extend-meta)))
+    (is (= :extend-meta (method' extend-meta')))))
 
 (comment
   (clojure.test/test-ns *ns*)

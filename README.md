@@ -24,10 +24,11 @@ Progress:
 - [x] after-ns-reload
 - [x] :only :changed/:loaded/:all
 - [x] Many-to-many mapping between files and namespaces
+- [x] Use load to load files, not nses
 - [x] keep defonce
 - [x] keep deftype
 - [x] keep defrecord
-- [ ] keep defprotocol
+- [x] keep defprotocol
 - [ ] keep multimethods
 - [x] ^:clj-reload/keep
 - [x] custom keep forms handler
@@ -35,7 +36,6 @@ Progress:
 - [ ] reload on file change
 - [ ] ? Try to keep aliases working
 - [ ] ? Get dependencies from live ns objects
-- [ ] ? Use load to load files, not nses
 
 ## License
 

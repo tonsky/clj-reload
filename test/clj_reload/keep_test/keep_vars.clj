@@ -1,4 +1,4 @@
-(ns clj-reload.keep-test.keep-normal)
+(ns clj-reload.keep-test.keep-vars)
 
 (def normal
   (rand-int Integer/MAX_VALUE))

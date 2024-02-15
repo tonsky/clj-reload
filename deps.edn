@@ -6,5 +6,5 @@
   {:jvm-opts ["-ea"]
    :extra-paths ["dev" "test" "fixtures"]
    :extra-deps 
-   {io.github.tonsky/duti {:git/sha "c7477aee2afb122b6f05c2e7da8206bc41329795"
+   {io.github.tonsky/duti {:git/sha "8c3c6cdff5fbc909db6da4b2711f9ec2e91dcfb1"
                            #_#_:local/root "/Users/tonsky/ws/duti"}}}}}

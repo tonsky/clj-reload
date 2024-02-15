@@ -5,6 +5,7 @@
     [clojure.string :as str]
     [clojure.walk :as walk])
   (:import
+    [clojure.lang LineNumberingPushbackReader Var]
     [java.io File PushbackReader StringReader]))
 
 (def ^:dynamic *log-fn*
@@ -445,9 +446,9 @@
      (when-some [var (resolve (symbol (name ns) (name sym)))]
        {:var var}))
    
-   :embed
+   :stash
    (fn [ns sym keep]
-     (list 'def sym @(:var keep)))
+     (intern *ns* sym @(:var keep)))
    
    :patch
    (fn [ns sym keep]
@@ -460,14 +461,14 @@
      (when-some [ctor (resolve (symbol (name ns) (str "->" sym)))]
        {:ctor ctor}))
    
-   :embed
+   :stash
    (fn [ns sym keep]
-     (list 'def (symbol (str "->" sym)) @(:ctor keep)))
+     (intern *ns* (symbol (str "->" sym)) @(:ctor keep)))
    
    :patch
    (fn [ns sym keep]
      (str
-       "(clojure.core/import " (classname ns sym) ")"
+       "(clojure.core/import " (classname ns sym) ") "
        "(def " (meta-str (:ctor keep)) "->" sym " clj-reload.keep/->" sym ")"))})
 
 (defmethod keep-methods 'defrecord [_]
@@ -478,50 +479,60 @@
          {:ctor ctor
           :map-ctor map-ctor})))
    
-   :embed
+   :stash
    (fn [ns sym keep]
-     (list 'do
-       (list 'def (symbol (str "->" sym)) @(:ctor keep))
-       (list 'def (symbol (str "map->" sym)) @(:map-ctor keep))))
+     (intern *ns* (symbol (str "->" sym)) @(:ctor keep))
+     (intern *ns* (symbol (str "map->" sym)) @(:map-ctor keep)))
    
    :patch
    (fn [ns sym keep]
      (str
-       "(clojure.core/import " (classname ns sym) ")"
-       "(def " (meta-str (:ctor keep)) "->" sym " clj-reload.keep/->" sym ")"
+       "(clojure.core/import " (classname ns sym) ") "
+       "(def " (meta-str (:ctor keep)) "->" sym " clj-reload.keep/->" sym ") "
        "(def " (meta-str (:map-ctor keep)) "map->" sym " clj-reload.keep/map->" sym ")"))})
+
+(defn update-protocol-method-builders [proto & vars]
+  (let [mb   (:method-builders proto)
+        vars (for-map [var vars]
+               [(symbol var) var])
+        mb'  (for-map [[var val] mb]
+               [(vars (symbol var)) val])]
+    (alter-var-root (:var proto) assoc :method-builders mb')))
 
 (defmethod keep-methods 'defprotocol [_]
   {:resolve 
    (fn [ns sym keep]
-     (when-some [proto (resolve (symbol (name ns) (str "->" sym)))]
+     (when-some [proto (resolve (symbol (name ns) (name sym)))]
        {:proto   proto
-        :methods (for-map [form (nnext (:form keep))
-                           :when (sequential? form)
-                           :let [[sym & _] form]]
-                   [sym (resolve (symbol (name ns) (name sym)))])}))
+        :methods (for-map [[method-var _] (:method-builders @proto)]
+                   [(.-sym ^Var method-var) method-var])}))
    
-   :embed
+   :stash
    (fn [ns sym keep]
-     (list* 'do
-       (list 'def sym @(:proto keep))
-       (for [[sym method] (:methods keep)]
-         (list 'def sym @method))))
+     (intern *ns* sym @(:proto keep))
+     (doseq [[method-sym method] (:methods keep)]
+       (intern *ns* method-sym @method)))
    
    :patch
    (fn [ns sym keep]
      (str
-       "(clojure.core/import " (classname ns sym) ")"
-       "(def " (meta-str (:proto keep)) sym " clj-reload.keep/->" sym ")"
-       (str/join
-         (for [[sym method] (:methods keep)]
-           (str "(def " (meta-str method) sym "clj-reload.keep/" sym ")")))))})
+       "(def " (meta-str (:proto keep)) sym " clj-reload.keep/" sym ") "
+       "(clojure.core/alter-var-root #'" sym " assoc :var #'" sym ") "
+       (str/join " "
+         (for [[method-sym method] (:methods keep)]
+           (str "(def " (meta-str method) "^{:protocol #'" sym "} " method-sym " clj-reload.keep/" method-sym ")")))
+       " (clj-reload.core/update-protocol-method-builders " sym " "
+       (str/join " "
+         (for [[method-sym _] (:methods keep)]
+           (str "#'" method-sym))) ") "
+       ; "(-reset-methods " sym ")"
+       ))})
 
 (defn keep-resolve [ns sym keep]
   ((:resolve (keep-methods (:tag keep))) ns sym keep))
 
-(defn keep-embed [ns sym keep]
-  ((:embed (keep-methods (:tag keep))) ns sym keep))
+(defn keep-stash [ns sym keep]
+  ((:stash (keep-methods (:tag keep))) ns sym keep))
 
 (defn keep-patch [ns sym keep]
   ((:patch (keep-methods (:tag keep))) ns sym keep))
@@ -549,7 +560,7 @@
     (alter @#'clojure.core/*loaded-libs* disj ns)))
 
 (defn patch-file [content patches]
-  (let [rdr     (clojure.lang.LineNumberingPushbackReader.
+  (let [rdr     (LineNumberingPushbackReader.
                   (StringReader. content))
         patched (StringBuilder.)]
     (loop []
@@ -561,13 +572,12 @@
           (= ::eof form)
           (str patched)
           
-          (and (list? form) (contains? patches (second form)))
-          (let [[_ sym] form
-                [_ ws]  (re-matches #"(?s)(\s*).*" text)
+          (and (list? form) (>= (count form) 2) (contains? patches (take 2 form)))
+          (let [[_ ws]  (re-matches #"(?s)(\s*).*" text)
                 _       (.append patched ws)
                 text    (subs text (count ws))
                 lines   (str/split-lines text)
-                text'   (patches sym)
+                text'   (patches (take 2 form))
                 text''  (if (= 1 (count lines))
                           (if (<= (count text) (count text'))
                             text'
@@ -593,14 +603,12 @@
     ;; stash keeps in clj-reload.keep
     (binding [*ns* *ns*]
       (in-ns 'clj-reload.keep)
-      (clojure.core/use 'clojure.core)
-      (eval (cons 'do
-              (map (fn [[sym keep]]
-                     (keep-embed ns sym keep)) keeps))))
+      (doseq [[sym keep] keeps]
+        (keep-stash ns sym keep)))
     
     ;; replace keeps in file with refs to clj-reload.keep
     (let [patch   (for-map [[sym keep] keeps]
-                    [sym (keep-patch ns sym keep)])
+                    [(list (:tag keep) sym) (keep-patch ns sym keep)])
           content (patch-file (slurp file) patch)]
       ; (println content)
       ;; load modified file
