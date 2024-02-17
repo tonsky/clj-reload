@@ -1,6 +1,6 @@
-(ns clj-reload.keep-test.keep-defprotocol)
+(ns clj-reload.keep-defprotocol)
 
-^:clj-reload.core/keep
+^:clj-reload/keep
 (defprotocol IProto
   :extend-via-metadata true
   (-method [_]))
@@ -54,6 +54,6 @@
 ;; ---
 
 (def extend-meta
-  ^{'clj-reload.keep-test.keep-defprotocol/-method
+  ^{'clj-reload.keep-defprotocol/-method
     (fn [_]
       :extend-meta)} [])

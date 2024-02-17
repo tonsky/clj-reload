@@ -4,7 +4,7 @@
  :aliases
  {:dev
   {:jvm-opts ["-ea"]
-   :extra-paths ["dev" "test" "fixtures"]
+   :extra-paths ["dev" "test" "fixtures/core_test" "fixtures/keep_test"]
    :extra-deps 
    {io.github.tonsky/duti {:git/sha "8c3c6cdff5fbc909db6da4b2711f9ec2e91dcfb1"
                            #_#_:local/root "/Users/tonsky/ws/duti"}}}}}

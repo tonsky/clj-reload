@@ -1,4 +1,4 @@
-(ns clj-reload.keep-test.keep-defrecord)
+(ns clj-reload.keep-defrecord)
 
 (defrecord RecordNormal [t])
 
@@ -11,7 +11,7 @@
 (def record-normal-map-factory
   (map->RecordNormal {:t 0}))
 
-^:clj-reload.core/keep
+^:clj-reload/keep
 (defrecord RecordKeep [t])
 
 (def record-keep-new

@@ -1,4 +1,4 @@
-(ns clj-reload.keep-test.keep-deftype)
+(ns clj-reload.keep-deftype)
 
 (deftype TypeNormal [t]
   java.lang.Object
@@ -12,7 +12,7 @@
 (def type-normal-factory
   (->TypeNormal 0))
 
-^:clj-reload.core/keep
+^:clj-reload/keep
 (deftype TypeKeep [t]
   java.lang.Object
   (equals [_ o]

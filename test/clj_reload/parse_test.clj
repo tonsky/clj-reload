@@ -1,15 +1,15 @@
 (ns clj-reload.parse-test
   (:require
-    [clojure.java.io :as io]
-    [clojure.string :as str]
-    [clojure.test :refer [is are deftest testing use-fixtures]]
     [clj-reload.core :as reload]
-    [clj-reload.core-test :as core-test])
+    [clj-reload.parse :as parse]
+    [clj-reload.util :as util]
+    [clojure.java.io :as io]
+    [clojure.test :refer [is deftest testing use-fixtures]])
   (:import
     [java.io PushbackReader StringReader StringWriter]))
 
 (defn read-str [s]
-  (reload/read-file (PushbackReader. (StringReader. s)) nil))
+  (parse/read-file (PushbackReader. (StringReader. s)) nil))
 
 (deftest read-file-test
   (is (= '{x {:requires
@@ -43,7 +43,7 @@
                        ...
                        (require 'a.b.k)
                        ...
-                       ^:clj-reload.core/keep
+                       ^:clj-reload/keep
                        (defprotocol y 2)
                        ...
                        (use 'a.b.l)")))
@@ -72,19 +72,19 @@ Unexpected :require form: [789 a b c]
 
 (deftest scan-impl-test
   (let [{files :files'
-         nses  :namespaces'} (binding [reload/*log-fn* nil]
+         nses  :namespaces'} (binding [util/*log-fn* nil]
                                (@#'reload/scan-impl nil ["fixtures"] 0))]
     (is (= '#{}
-          (get-in files [(io/file "fixtures/no_ns.clj") :namespaces])))
+          (get-in files [(io/file "fixtures/core_test/no_ns.clj") :namespaces])))
     
     (is (= '#{two-nses two-nses-second}
-          (get-in files [(io/file "fixtures/two_nses.clj") :namespaces])))
+          (get-in files [(io/file "fixtures/core_test/two_nses.clj") :namespaces])))
     
     (is (= '#{split}
-          (get-in files [(io/file "fixtures/split.clj") :namespaces])))
+          (get-in files [(io/file "fixtures/core_test/split.clj") :namespaces])))
     
     (is (= '#{split}
-          (get-in files [(io/file "fixtures/split_part.clj") :namespaces])))
+          (get-in files [(io/file "fixtures/core_test/split_part.clj") :namespaces])))
         
     (is (= '#{clojure.string}
           (get-in nses ['two-nses :requires])))
@@ -95,5 +95,5 @@ Unexpected :require form: [789 a b c]
     (is (= '#{clojure.string clojure.set}
           (get-in nses ['split :requires])))
     
-    (is (= (io/file "fixtures/split.clj")
+    (is (= (io/file "fixtures/core_test/split.clj")
           (get-in nses ['split :main-file])))))

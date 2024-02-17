@@ -1,0 +1,3 @@
+{:lint-as
+ {clj-reload.util/for-map clojure.core/for
+  clj-reload.util/for-set clojure.core/for}}

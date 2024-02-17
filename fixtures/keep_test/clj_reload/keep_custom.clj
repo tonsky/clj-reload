@@ -1,9 +1,9 @@
-(ns clj-reload.keep-test.keep-custom)
+(ns clj-reload.keep-custom)
 
 (defmacro deftype+ [& body]
   `(deftype ~@body))
 
-^:clj-reload.core/keep
+^:clj-reload/keep
 (deftype+ CustomTypeKeep [t])
 
 (def custom-type-keep

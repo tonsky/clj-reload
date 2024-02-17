@@ -3,40 +3,41 @@
     [clojure.string :as str]
     [clojure.test :refer [is are deftest testing use-fixtures]]
     [clj-reload.core :as reload]
-    [clj-reload.core-test :as core-test]))
+    [clj-reload.keep :as keep]
+    [clj-reload.test-util :as tu]))
 
 (defn wrap-test [f]
-  (binding [core-test/*dir* "test"]
-    (core-test/reset
-      'clj-reload.keep-test.keep-custom
-      'clj-reload.keep-test.keep-defprotocol
-      'clj-reload.keep-test.keep-defrecord
-      'clj-reload.keep-test.keep-deftype
-      'clj-reload.keep-test.keep-vars)
+  (binding [tu/*dir* "fixtures/keep_test"]
+    (tu/reset
+      '[clj-reload.keep-custom
+        clj-reload.keep-defprotocol
+        clj-reload.keep-defrecord
+        clj-reload.keep-deftype
+        clj-reload.keep-vars])
     (f)))
 
 (use-fixtures :each wrap-test)
 
 (deftest patch-file-test
   (is (=  "before (def *atom 888)     after"
-        (reload/patch-file
+        (keep/patch-file
           "before (defonce *atom 777) after"
           {'(defonce *atom) "(def *atom 888)"})))
   
   (is (=  "before (def *atom 1000000) after"
-        (reload/patch-file
+        (keep/patch-file
           "before (def *atom 1) after"
           {'(def *atom) "(def *atom 1000000)"})))
   
   (is (=  "before (def *atom 888)
        after"
-        (reload/patch-file
+        (keep/patch-file
           "before (defonce *atom
   777) after"
           {'(defonce *atom) "(def *atom 888)"})))
   
   (is (=  "before (def *atom 888) (reset! *atom nil) after"
-        (reload/patch-file
+        (keep/patch-file
           "before (def *atom 777) (reset! *atom nil) after"
           {'(def *atom) "(def *atom 888)"})))
   
@@ -49,7 +50,7 @@
                
                (def just-var 888)
                            "
-        (reload/patch-file
+        (keep/patch-file
           #ml "(ns keep)
                
                   asdas
@@ -66,9 +67,8 @@
   (= (dissoc (meta a) :ns) (dissoc (meta b) :ns)))
 
 (deftest keep-vars-test
-  (require 'clj-reload.keep-test.keep-vars)
-  (core-test/init)
-  (let [ns         (find-ns 'clj-reload.keep-test.keep-vars)
+  (tu/init 'clj-reload.keep-vars)
+  (let [ns         (find-ns 'clj-reload.keep-vars)
         normal     @(ns-resolve ns 'normal)
         atom       (reset! @(ns-resolve ns '*atom) 100500)
         just-var   @(ns-resolve ns 'just-var)
@@ -78,9 +78,9 @@
         private-fn (ns-resolve ns 'private-fn)
         normal-2   @(ns-resolve ns 'normal-2)
         
-        _          (core-test/touch 'clj-reload.keep-test.keep-vars)
-        _          (core-test/reload)
-        ns'        (find-ns 'clj-reload.keep-test.keep-vars)]
+        _          (tu/touch 'clj-reload.keep-vars)
+        _          (tu/reload)
+        ns'        (find-ns 'clj-reload.keep-vars)]
     
     (is (not= normal @(ns-resolve ns' 'normal)))
     (is (= atom @@(ns-resolve ns' '*atom)))
@@ -91,25 +91,24 @@
     (is (= @meta-var @(ns-resolve ns' 'meta-var)))
     (is (meta= meta-var (ns-resolve ns' 'meta-var)))
     
-    (is (= @public-fn) @(ns-resolve ns' 'public-fn))
+    (is (= @public-fn @(ns-resolve ns' 'public-fn)))
     (is (meta= public-fn (ns-resolve ns' 'public-fn)))
     
-    (is (= @private-fn) @(ns-resolve ns' 'private-fn))
+    (is (= @private-fn @(ns-resolve ns' 'private-fn)))
     (is (meta= private-fn (ns-resolve ns' 'private-fn)))
     
     (is (not= normal-2 @(ns-resolve ns' 'normal-2)))))
 
 (deftest keep-type-test
-  (require 'clj-reload.keep-test.keep-deftype)
-  (core-test/init)
-  (let [ns             (find-ns 'clj-reload.keep-test.keep-deftype)
+  (tu/init 'clj-reload.keep-deftype)
+  (let [ns             (find-ns 'clj-reload.keep-deftype)
         normal-new     @(ns-resolve ns 'type-normal-new)
         normal-factory @(ns-resolve ns 'type-normal-factory)
         keep-new       @(ns-resolve ns 'type-keep-new)
         keep-factory   @(ns-resolve ns 'type-keep-factory)
-        _              (core-test/touch 'clj-reload.keep-test.keep-deftype)
-        _              (core-test/reload)
-        ns'            (find-ns 'clj-reload.keep-test.keep-deftype)]
+        _              (tu/touch 'clj-reload.keep-deftype)
+        _              (tu/reload)
+        ns'            (find-ns 'clj-reload.keep-deftype)]
     (is (not= normal-new @(ns-resolve ns' 'type-normal-new)))
     (is (not (identical? (class normal-new) (class @(ns-resolve ns' 'type-normal-new)))))
     
@@ -125,18 +124,17 @@
     (is (identical? (class keep-factory) (class @(ns-resolve ns' 'type-keep-factory))))))
 
 (deftest keep-record-test
-  (require 'clj-reload.keep-test.keep-defrecord)
-  (core-test/init)
-  (let [ns                 (find-ns 'clj-reload.keep-test.keep-defrecord)
+  (tu/init 'clj-reload.keep-defrecord)
+  (let [ns                 (find-ns 'clj-reload.keep-defrecord)
         normal-new         @(ns-resolve ns 'record-normal-new)
         normal-factory     @(ns-resolve ns 'record-normal-factory)
         normal-map-factory @(ns-resolve ns 'record-normal-map-factory)
         keep-new           @(ns-resolve ns 'record-keep-new)
         keep-factory       @(ns-resolve ns 'record-keep-factory)
         keep-map-factory   @(ns-resolve ns 'record-keep-map-factory)
-        _                  (core-test/touch 'clj-reload.keep-test.keep-defrecord)
-        _                  (core-test/reload)
-        ns'                (find-ns 'clj-reload.keep-test.keep-defrecord)]
+        _                  (tu/touch 'clj-reload.keep-defrecord)
+        _                  (tu/reload)
+        ns'                (find-ns 'clj-reload.keep-defrecord)]
     (is (not= normal-new @(ns-resolve ns' 'record-normal-new)))
     (is (not (identical? (class normal-new) (class @(ns-resolve ns' 'record-normal-new)))))
     
@@ -158,25 +156,23 @@
     (is (= keep-map-factory @(ns-resolve ns' 'record-keep-map-factory)))
     (is (identical? (class keep-map-factory) (class @(ns-resolve ns' 'record-keep-map-factory))))))
 
-(defmethod reload/keep-methods 'deftype+ [tag]
+(defmethod reload/keep-methods 'deftype+ [_]
   (reload/keep-methods 'deftype))
 
 (deftest keep-custom-def-test
-  (require 'clj-reload.keep-test.keep-custom)
-  (core-test/init)
-  (let [ns    (find-ns 'clj-reload.keep-test.keep-custom)
+  (tu/init 'clj-reload.keep-custom)
+  (let [ns    (find-ns 'clj-reload.keep-custom)
         ctor  @(ns-resolve ns '->CustomTypeKeep)
         value @(ns-resolve ns 'custom-type-keep)
-        _     (core-test/touch 'clj-reload.keep-test.keep-custom)
-        _     (core-test/reload)
-        ns'   (find-ns 'clj-reload.keep-test.keep-custom)]
+        _     (tu/touch 'clj-reload.keep-custom)
+        _     (tu/reload)
+        ns'   (find-ns 'clj-reload.keep-custom)]
     (is (identical? ctor @(ns-resolve ns' '->CustomTypeKeep)))
     (is (identical? (class value) (class @(ns-resolve ns' 'custom-type-keep))))))
 
 (deftest keep-protocol-test
-  (require 'clj-reload.keep-test.keep-defprotocol)
-  (core-test/init)
-  (let [ns                (find-ns 'clj-reload.keep-test.keep-defprotocol)
+  (tu/init 'clj-reload.keep-defprotocol)
+  (let [ns                (find-ns 'clj-reload.keep-defprotocol)
         proto             @(ns-resolve ns 'IProto)
         method            @(ns-resolve ns '-method)
         rec-inline        @(ns-resolve ns 'rec-inline)
@@ -185,10 +181,10 @@
         rec-extend        @(ns-resolve ns 'rec-extend)
         extend-meta       @(ns-resolve ns 'extend-meta)
         
-        _       (core-test/touch 'clj-reload.keep-test.keep-defprotocol)
-        _       (core-test/reload)
+        _                 (tu/touch 'clj-reload.keep-defprotocol)
+        _                 (tu/reload)
         
-        ns'               (find-ns 'clj-reload.keep-test.keep-defprotocol)
+        ns'               (find-ns 'clj-reload.keep-defprotocol)
         proto'            @(ns-resolve ns' 'IProto)
         method'           @(ns-resolve ns' '-method)
         rec-inline'       @(ns-resolve ns' 'rec-inline)
@@ -245,7 +241,3 @@
     (is (= :extend-meta (method extend-meta')))
     (is (= :extend-meta (method' extend-meta)))
     (is (= :extend-meta (method' extend-meta')))))
-
-(comment
-  (clojure.test/test-ns *ns*)
-  (clojure.test/run-test-var #'keep-vars-test))

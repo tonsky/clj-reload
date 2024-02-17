@@ -1,118 +1,39 @@
 (ns clj-reload.core-test
   (:require
-    [clojure.java.io :as io]
+    [clj-reload.core :as reload]
+    [clj-reload.test-util :as tu]
+    [clj-reload.util :as util]
     [clojure.string :as str]
-    [clojure.test :refer [is are deftest testing]]
-    [clj-reload.core :as reload])
-  (:import
-    [java.io File]))
+    [clojure.test :refer [is are deftest testing use-fixtures]]))
 
-(def *trace
-  (atom []))
+(defn reset []
+  (tu/reset '[two-nses-second two-nses split o n m l i j k f a g h d c e b]))
 
-(def *time
-  (atom (System/currentTimeMillis)))
+(defn wrap-test [f]
+  (binding [tu/*dir* "fixtures/core_test"]
+    (reset)
+    (f)))
 
-(def ^:dynamic *dir*
-  "fixtures")
-
-(defn reset [& nses]
-  (reset! *trace [])
-  (let [now (System/currentTimeMillis)]
-    (reset! *time now)
-    (doseq [^File file (next (file-seq (io/file *dir*)))
-            :when (> (.lastModified file) now)]
-      (.setLastModified file now)))
-  (doseq [ns (or nses '[two-nses-second two-nses split o n m l i j k f a g h d c e b])]
-    (when (@@#'clojure.core/*loaded-libs* ns)
-      (remove-ns ns)
-      (dosync
-        (alter @#'clojure.core/*loaded-libs* disj ns)))))
-
-(defn ^File sym->file [sym]
-  (-> sym
-    name
-    (str/replace "-" "_")
-    (str/replace "." "/")
-    (str ".clj")
-    (->>
-      (str *dir* "/")
-      (io/file))))
-
-(defn touch [sym]
-  (let [now  (swap! *time + 1000)
-        file (sym->file sym)]
-    (.setLastModified ^File file now)))
-
-(defn doeach [f xs]
-  (doseq [x xs]
-    (f x)))
-
-(defmacro with-changed [sym content' & body]
-  `(let [sym#     ~sym
-         file#    (sym->file sym#)
-         content# (slurp file#)]
-     (try
-       (spit file# ~content')
-       (touch sym#)
-       ~@body
-       (finally
-         (spit file# content#)
-         (touch sym#)))))
-
-(defmacro with-deleted [sym & body]
-  `(let [sym#     ~sym
-         file#    (sym->file sym#)
-         content# (slurp file#)]
-     (try
-       (.delete file#)
-       ~@body
-       (finally
-         (spit file# content#)
-         (touch sym#)))))
-
-(defn log-fn [type arg & _]
-  (swap! *trace
-    (fn [track]
-      (let [last-type (->> track (filter string?) last)]
-        (cond
-          (= "fixtures/err_parse.clj" arg)          track
-          (= "  exception during unload hook" type) (conj track type (.getName (class arg)))
-          (not= type last-type)                     (conj track type arg)
-          :else                                     (conj track arg))))))
-
-(defn init
-  ([]
-   (init nil))
-  ([opts]
-   (reload/init
-     (merge
-       {:dirs [*dir*]}
-       opts))))
-
-(defn reload
-  ([]
-   (reload nil))
-  ([opts]
-   (reload/reload
-     (merge {:log-fn log-fn} opts))))
+(use-fixtures :each wrap-test)
 
 (defn modify [& syms]
   (let [[opts syms] (if (map? (first syms))
                       [(first syms) (next syms)]
                       [nil syms])]
-    (try
-      (reset)
-      (doeach require (:require opts))
-      (init opts)
-      (doeach touch syms)
-      (reload opts)
-      @*trace)))
+    (reset)
+    (util/doeach require (:require opts))
+    (tu/init opts)
+    (util/doeach tu/touch syms)
+    (tu/reload opts)
+    (tu/trace)))
 
+; Fixture namespaces dependency plan
+; Top ones require bottom ones
+; 
 ;    a     f     i  l  m
-;  / | \ /   \   |     |
+;  ╱ │ ╲ ╱   ╲   │     │
 ; b  c  d  h  g  j     n
-;     \ | /      |     |
+;     ╲ │ ╱      │     │
 ;       e        k     o
 
 (deftest reload-test
@@ -134,56 +55,48 @@
     (is (= '["Unloading" l i j k h f g a d c e b "Loading" b e c d a g f h k j i l] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
 
 (deftest return-value-ok-test
-  (reset)
-  (require 'a 'f 'h)
-  (init)
+  (tu/init 'a 'f 'h)
   (is (= {:unloaded '[]
-          :loaded   '[]} (reload)))
-  (touch 'e)
+          :loaded   '[]} (tu/reload)))
+  (tu/touch 'e)
   (is (= {:unloaded '[h f a d c e]
-          :loaded   '[e c d a f h]} (reload))))
+          :loaded   '[e c d a f h]} (tu/reload))))
 
 (deftest return-value-fail-test
-  (reset)
-  (require 'a 'f 'h)
-  (init)
-  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
-    (touch 'e)
+  (tu/init 'a 'f 'h)
+  (tu/with-changed 'c "(ns c (:require e)) (/ 1 0)"
+    (tu/touch 'e)
     (try
-      (reload)
+      (tu/reload)
       (is (= "Should throw" "Didn't throw"))
       (catch Exception e
         (is (= {:unloaded '[h f a d c e]
                 :loaded   '[e]
                 :failed   'c} (ex-data e))))))
   (is (= {:unloaded '[c]
-          :loaded   '[c d a f h]} (reload))))
+          :loaded   '[c d a f h]} (tu/reload))))
 
 (deftest return-value-fail-safe-test
-  (reset)
-  (require 'a 'f 'h)
-  (init)
-  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
-    (touch 'e)
-    (let [res (reload {:throw false})]
+  (tu/init 'a 'f 'h)
+  (tu/with-changed 'c "(ns c (:require e)) (/ 1 0)"
+    (tu/touch 'e)
+    (let [res (tu/reload {:throw false})]
       (is (= {:unloaded '[h f a d c e]
               :loaded   '[e]
               :failed   'c} (dissoc res :exception)))))
   (is (= {:unloaded '[c]
-          :loaded   '[c d a f h]} (reload))))
+          :loaded   '[c d a f h]} (tu/reload))))
 
 (deftest reload-active-test
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e)))
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
 
 (deftest reload-split-test
-  (reset)
-  (require 'split)
-  (init)
+  (tu/init 'split)
   (is (= 1 @(resolve 'split/split-part)))
-  (with-changed 'split-part "(in-ns 'split) (def split-part 2)"
-    (reload)
-    (is (= '["Unloading" split "Loading" split] @*trace))
+  (tu/with-changed 'split-part "(in-ns 'split) (def split-part 2)"
+    (tu/reload)
+    (is (= '["Unloading" split "Loading" split] (tu/trace)))
     (is (= 2 @(resolve 'split/split-part)))))
 
 (deftest exclude-test
@@ -198,188 +111,141 @@
   (is (= '["Unloading" h f g a d c e b "Loading" b e c d a g f h] (modify {:require '[a f h] :only :loaded}))))
 
 (deftest reload-all-test
-  (with-deleted 'err-runtime
+  (tu/with-deleted 'err-runtime
     (is (= '["Unloading" two-nses-second two-nses split m n o l i j k h f g a d c e b
              "Loading" b e c d a g f h k j i l o n m split two-nses two-nses-second]
           (modify {:require '[] :only :all})))))
 
 (deftest reload-exception-test
-  (reset)
-  (require 'a)
-  (init)
-  (with-changed 'c "(ns c (:require e)) (/ 1 0)"
-    (touch 'e)
-    (is (thrown? Exception (reload)))
-    (is (= '["Unloading" a d c e "Loading" e c "  failed to load" c] @*trace))
-    (reset! *trace [])
-    (is (thrown? Exception (reload)))
-    (is (= '["Unloading" c "Loading" c "  failed to load" c] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" c "Loading" c d a] @*trace)))
+  (tu/init 'a)
+  (tu/with-changed 'c "(ns c (:require e)) (/ 1 0)"
+    (tu/touch 'e)
+    (is (thrown? Exception (tu/reload)))
+    (is (= '["Unloading" a d c e "Loading" e c "  failed to load" c] (tu/trace)))
+    (is (thrown? Exception (tu/reload)))
+    (is (= '["Unloading" c "Loading" c "  failed to load" c] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" c "Loading" c d a] (tu/trace))))
 
 (deftest reload-unknown-dep-test
-  (reset)
-  (require 'a)
-  (init)
-  (with-changed 'c "(ns c (:require e z))"
-    (touch 'e)
-    (is (thrown? Exception (reload)))
-    (is (= '["Unloading" a d c e "Loading" e d c "  failed to load" c] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" c "Loading" c a] @*trace)))
+  (tu/init 'a)
+  (tu/with-changed 'c "(ns c (:require e z))"
+    (tu/touch 'e)
+    (is (thrown? Exception (tu/reload)))
+    (is (= '["Unloading" a d c e "Loading" e d c "  failed to load" c] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" c "Loading" c a] (tu/trace))))
 
 (deftest reload-ill-formed-test
-  (reset)
-  (require 'a)
-  (init)
-  (with-changed 'c "(ns c (:require e"
-    (touch 'e)
-    (is (thrown? Exception (reload)))
-    (is (= '["Failed to read" "fixtures/c.clj"] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" a d c e "Loading" e c d a] @*trace)))
+  (tu/init 'a)
+  (tu/with-changed 'c "(ns c (:require e"
+    (tu/touch 'e)
+    (is (thrown? Exception (tu/reload)))
+    (is (= '["Failed to read" "fixtures/core_test/c.clj"] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" a d c e "Loading" e c d a] (tu/trace))))
 
 (deftest reload-changed-test
-  (reset)
-  (require 'i)
-  (init)
-  (with-changed 'i "(ns i)"
-    (with-changed 'j "(ns j (:require i))"
-      (with-changed 'k "(ns k (:require j))"
-        (reload)
-        (is (= '["Unloading" i j k "Loading" i j k] @*trace)))))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" k j i "Loading" k j i] @*trace)))
+  (tu/init 'i)
+  (tu/with-changed 'i "(ns i)"
+    (tu/with-changed 'j "(ns j (:require i))"
+      (tu/with-changed 'k "(ns k (:require j))"
+        (tu/reload)
+        (is (= '["Unloading" i j k "Loading" i j k] (tu/trace))))))
+  (tu/reload)
+  (is (= '["Unloading" k j i "Loading" k j i] (tu/trace))))
 
 (deftest reload-deleted-test
-  (reset)
-  (require 'l)
-  (init)
-  (with-deleted 'l
-    (reload)
-    (is (= '["Unloading" l] @*trace))))
+  (tu/init 'l)
+  (tu/with-deleted 'l
+    (tu/reload)
+    (is (= '["Unloading" l] (tu/trace)))))
 
 (deftest reload-deleted-2-test
-  (reset)
-  (require 'i)
-  (init)
-  (with-changed 'j "(ns j)"
-    (with-deleted 'k
-      (reload)
-      (is (= '["Unloading" i j k "Loading" j i] @*trace))))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" i j "Loading" j i] @*trace)))
+  (tu/init 'i)
+  (tu/with-changed 'j "(ns j)"
+    (tu/with-deleted 'k
+      (tu/reload)
+      (is (= '["Unloading" i j k "Loading" j i] (tu/trace)))))
+  (tu/reload)
+  (is (= '["Unloading" i j "Loading" j i] (tu/trace))))
 
 (deftest reload-rename-ns
-  (reset)
-  (require 'i)
-  (init)
-  (with-changed 'i "(ns z)"
-    (touch 'k)
-    (reload)
-    (is (= '["Unloading" i j k "Loading" k j] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '[] @*trace)))
+  (tu/init 'i)
+  (tu/with-changed 'i "(ns z)"
+    (tu/touch 'k)
+    (tu/reload)
+    (is (= '["Unloading" i j k "Loading" k j] (tu/trace))))
+  (tu/reload)
+  (is (= '[] (tu/trace))))
 
 (deftest reload-remove-ns
-  (reset)
-  (require 'i)
-  (init)
-  (with-changed 'i ""
-    (touch 'k)
-    (reload)
-    (is (= '["Unloading" i j k "Loading" k j] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '[] @*trace)))
+  (tu/init 'i)
+  (tu/with-changed 'i ""
+    (tu/touch 'k)
+    (tu/reload)
+    (is (= '["Unloading" i j k "Loading" k j] (tu/trace))))
+  (tu/reload)
+  (is (= '[] (tu/trace))))
 
 (deftest cycle-self-test
-  (reset)
-  (require 'l)
-  (init)
-  (with-changed 'l "(ns l (:require l))"
-    (is (thrown-with-msg? Exception #"Cycle detected: l" (reload)))
-    (is (= '[] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" l "Loading" l] @*trace)))
+  (tu/init 'l)
+  (tu/with-changed 'l "(ns l (:require l))"
+    (is (thrown-with-msg? Exception #"Cycle detected: l" (tu/reload)))
+    (is (= '[] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" l "Loading" l] (tu/trace))))
 
 (deftest cycle-one-hop-test
-  (reset)
-  (require 'i)
-  (init)
-  (with-changed 'j "(ns j (:require i))"
-    (is (thrown-with-msg? Exception #"Cycle detected: i, j" (reload)))
-    (is (= '[] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" i j "Loading" j i] @*trace)))
+  (tu/init 'i)
+  (tu/with-changed 'j "(ns j (:require i))"
+    (is (thrown-with-msg? Exception #"Cycle detected: i, j" (tu/reload)))
+    (is (= '[] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" i j "Loading" j i] (tu/trace))))
 
 (deftest cycle-two-hops-test
-  (reset)
-  (require 'i)
-  (init)
-  (with-changed 'k "(ns k (:require i))"
-    (is (thrown-with-msg? Exception #"Cycle detected: i, j, k" (reload)))
-    (is (= '[] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" i j k "Loading" k j i] @*trace)))
+  (tu/init 'i)
+  (tu/with-changed 'k "(ns k (:require i))"
+    (is (thrown-with-msg? Exception #"Cycle detected: i, j, k" (tu/reload)))
+    (is (= '[] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" i j k "Loading" k j i] (tu/trace))))
 
 (deftest cycle-extra-nodes-test
-  (reset)
-  (require 'a 'f 'h)
-  (init)
-  (with-changed 'e "(ns e (:require h))"
-    (is (thrown-with-msg? Exception #"Cycle detected: e, h" (reload)))
-    (is (= '[] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" h f a d c e "Loading" e c d a f h] @*trace)))
+  (tu/init 'a 'f 'h)
+  (tu/with-changed 'e "(ns e (:require h))"
+    (is (thrown-with-msg? Exception #"Cycle detected: e, h" (tu/reload)))
+    (is (= '[] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" h f a d c e "Loading" e c d a f h] (tu/trace))))
 
 (deftest hooks-test
-  (reset)
   (is (= '["Unloading" m n "Loading" n m] (modify {:require '[o n m]} 'n)))
-  (is (= [:unload-m :unload-n :reload-n :reload-m] @@(resolve 'o/*atom)))
-  
-  (reset)
+  (is (= [:unload-m :unload-n :reload-n :reload-m] @@(resolve 'o/*atom))))
+
+(deftest hooks-test-2
   (is (= '["Unloading" m "Loading" m] (modify {:require '[o n m]} 'm)))
   (is (= [:unload-m :reload-m] @@(resolve 'o/*atom))))
 
 (deftest unload-hook-fail-test
-  (reset)
-  (with-changed 'm "(ns m (:require n o))
-                    (defn before-ns-unload []
-                      (/ 1 0))"
-    (require 'm)
-    (init)
-    (touch 'm)
-    (reload)
-    (is (= '["Unloading" m "  exception during unload hook" "java.lang.ArithmeticException" "Loading" m] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" m "  exception during unload hook" "java.lang.ArithmeticException" "Loading" m] @*trace)))
+  (tu/with-changed 'm #ml "(ns m (:require n o))
+                                    (defn before-ns-unload []
+                                      (/ 1 0))"
+    (tu/init 'm)
+    (tu/touch 'm)
+    (tu/reload)
+    (is (= '["Unloading" m "  exception during unload hook" "java.lang.ArithmeticException" "Loading" m] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" m "  exception during unload hook" "java.lang.ArithmeticException" "Loading" m] (tu/trace))))
 
 (deftest reload-hook-fail-test
-  (reset)
-  (require 'm)
-  (init)
-  (with-changed 'n "(ns n (:require o))
-                    (defn after-ns-reload []
-                      (/ 1 0))"
-    (touch 'o)
-    (is (thrown? Exception (reload)))
-    (is (= '["Unloading" m n o "Loading" o n "  failed to load" n] @*trace)))
-  (reset! *trace [])
-  (reload)
-  (is (= '["Unloading" n "Loading" n m] @*trace)))
-
-(comment
-  (test/test-ns *ns*)
-  (clojure.test/run-test-var #'keep-type-test))
+  (tu/init 'm)
+  (tu/with-changed 'n #ml "(ns n (:require o))
+                                    (defn after-ns-reload []
+                                      (/ 1 0))"
+    (tu/touch 'o)
+    (is (thrown? Exception (tu/reload)))
+    (is (= '["Unloading" m n o "Loading" o n "  failed to load" n] (tu/trace))))
+  (tu/reload)
+  (is (= '["Unloading" n "Loading" n m] (tu/trace))))
