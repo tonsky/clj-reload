@@ -68,15 +68,17 @@
          (spit file# content#)
          (touch sym#)))))
 
-(defn log-fn [type arg & _]
+(defn log-fn [& args]
   (swap! *trace
     (fn [track]
-      (let [last-type (->> track (filter string?) last)]
+      (let [[type arg & _] args
+            last-type (->> track (filter string?) last)]
         (cond
-          (= "fixtures/core_test/err_parse.clj" arg)          track
-          (= "  exception during unload hook" type) (conj track type (.getName (class arg)))
-          (not= type last-type)                     (conj track type arg)
-          :else                                     (conj track arg))))))
+          (nil? arg)                                 track
+          (= "fixtures/core_test/err_parse.clj" arg) track
+          (= "  exception during unload hook" type)  (conj track type (.getName (class arg)))
+          (not= type last-type)                      (conj track type arg)
+          :else                                      (conj track arg))))))
 
 (defn init [& args]
   (let [[opts nses] (if (map? (first args))

@@ -218,7 +218,7 @@
     (alter @#'clojure.core/*loaded-libs* disj ns)))
 
 (defn- ns-load [ns file keeps reload-hook]
-  (util/log "Loading" ns "from" (util/file-path file))
+  (util/log "Loading" ns #_"from" #_(util/file-path file))
   (try
     (if (empty? keeps)
       (util/ns-load-file (slurp file) ns file)
@@ -293,8 +293,11 @@
                (recur unloaded (conj loaded ns) state'))))
          
          :else
-         {:unloaded unloaded
-          :loaded   loaded})))))
+         (do
+           (when (and (empty? unloaded) (empty? loaded))
+             (util/log "Nothing to reload"))
+           {:unloaded unloaded
+            :loaded   loaded}))))))
 
 (defmulti keep-methods
   (fn [tag]

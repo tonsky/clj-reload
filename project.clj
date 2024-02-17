@@ -1,5 +1,5 @@
 (defproject io.github.tonsky/clj-reload "0.0.0"
-  :description "<description>"
+  :description "Smarter way to reload Clojure code"
   :license     {:name "MIT" :url "https://github.com/tonsky/clj-reload/blob/master/LICENSE"}
   :url         "https://github.com/tonsky/clj-reload"
   :dependencies
