@@ -72,6 +72,7 @@
         normal     @(ns-resolve ns 'normal)
         atom       (reset! @(ns-resolve ns '*atom) 100500)
         just-var   @(ns-resolve ns 'just-var)
+        just-var-2 @(ns-resolve ns 'just-var-2)
         dependent  @(ns-resolve ns 'dependent)
         meta-var   (ns-resolve ns 'meta-var)
         public-fn  (ns-resolve ns 'public-fn)
@@ -85,6 +86,7 @@
     (is (not= normal @(ns-resolve ns' 'normal)))
     (is (= atom @@(ns-resolve ns' '*atom)))
     (is (= just-var @(ns-resolve ns' 'just-var)))
+    (is (= just-var-2 @(ns-resolve ns' 'just-var-2)))
     (is (= (first dependent) (first @(ns-resolve ns' 'dependent))))
     (is (not= (second dependent) (second @(ns-resolve ns' 'dependent))))
     

@@ -20,3 +20,7 @@
 (defn -test-main [_]
   (require 'clj-reload.core-test 'clj-reload.keep-test 'clj-reload.parse-test)
   (duti/test-exit #"clj-reload\..*-test"))
+
+(comment
+  (reload)
+  (test-all))

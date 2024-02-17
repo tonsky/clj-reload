@@ -100,7 +100,10 @@
         
          (or
            (= 'defonce tag)
-           (:clj-reload/keep (meta form)))
+           (:clj-reload/keep (meta form))
+           (and
+             (list? form)
+             (:clj-reload/keep (meta (second form)))))
          (let [[_ name] form]
            (recur ns (assoc-in nses [ns :keep name] {:tag  tag
                                                      :form form})))

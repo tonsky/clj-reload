@@ -121,7 +121,18 @@
      :files       files'
      :namespaces  namespaces'}))
 
-(defn init [opts]
+(defn init
+  "Options:
+   
+   :dirs        :: [<string> ...]  - where to look for files
+   :no-reload   :: #{<symbol> ...} - list of namespaces to skip reload entirely
+   :no-unload   :: #{<symbol> ...} - list of namespaces to skip unload only.
+                                     These will be loaded “on top” of previous state
+   :unload-hook :: <symbol>        - if function with this name exists in a namespace,
+                                     it will be called before unloading. Default: 'before-ns-unload
+   :reload-hook :: <symbol>        - if function with this name exists in a namespace,
+                                     it will be called after reloading. Default: 'after-ns-reload"
+  [opts]
   (binding [util/*log-fn* nil]
     (reset! *state (init-impl opts))))
 
@@ -225,11 +236,23 @@
 (defn reload
   "Options:
    
-   :throw  :: true | false  - throw or return exception, default true
-   :log-fn :: (fn [& args]) - fn to display unload/reload status
-   :only   :: :changed      - default. Only reloads changed already loaded files
-            | :loaded       - Reload all loaded files
-            | :all          - Reload everything it can find in dirs"
+     :throw  :: true | false  - throw or return exception, default true
+     :log-fn :: (fn [& args]) - fn to display unload/reload status
+     :only   :: :changed      - default. Only reloads changed already loaded files
+              | :loaded       - Reload all loaded files
+              | :all          - Reload everything it can find in dirs
+   
+   Returns map of what was reloaded
+   
+     {:unloaded [<symbol> ...]
+      :loaded   [<symbol> ...]}
+   
+   If anything fails, throws. If :throw false, return value will also have keys
+   
+     {:failed    <symbol>
+      :exception <Throwable>}
+   
+   Can be called multiple times. If reload fails, fix the error and call `reload` again"
   ([]
    (reload nil))
   ([opts]
