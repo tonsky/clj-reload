@@ -303,8 +303,23 @@
   (fn [tag]
     tag))
 
-(defmethod keep-methods :default [_]
-  keep/keep-methods-default)
+(defmethod keep-methods :default [tag]
+  (throw
+    (ex-info
+      (str "Keeping " tag " forms is not implemented")
+      {:tag tag})))
+    
+(defmethod keep-methods 'def [_]
+  keep/keep-methods-defs)
+
+(defmethod keep-methods 'defn [_]
+  keep/keep-methods-defs)
+
+(defmethod keep-methods 'defn- [_]
+  keep/keep-methods-defs)
+
+(defmethod keep-methods 'defonce [_]
+  keep/keep-methods-defs)
 
 (defmethod keep-methods 'deftype [_]
   keep/keep-methods-deftype)

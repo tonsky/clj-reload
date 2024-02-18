@@ -68,25 +68,27 @@
 
 (deftest keep-vars-test
   (tu/init 'clj-reload.keep-vars)
-  (let [ns         (find-ns 'clj-reload.keep-vars)
-        normal     @(ns-resolve ns 'normal)
-        atom       (reset! @(ns-resolve ns '*atom) 100500)
-        just-var   @(ns-resolve ns 'just-var)
-        just-var-2 @(ns-resolve ns 'just-var-2)
-        dependent  @(ns-resolve ns 'dependent)
-        meta-var   (ns-resolve ns 'meta-var)
-        public-fn  (ns-resolve ns 'public-fn)
-        private-fn (ns-resolve ns 'private-fn)
-        normal-2   @(ns-resolve ns 'normal-2)
+  (let [ns          (find-ns 'clj-reload.keep-vars)
+        normal      @(ns-resolve ns 'normal)
+        atom        (reset! @(ns-resolve ns '*atom) 100500)
+        just-var    @(ns-resolve ns 'just-var)
+        just-var-2  @(ns-resolve ns 'just-var-2)
+        private-var @(ns-resolve ns 'private-var)
+        dependent   @(ns-resolve ns 'dependent)
+        meta-var    (ns-resolve ns 'meta-var)
+        public-fn   (ns-resolve ns 'public-fn)
+        private-fn  (ns-resolve ns 'private-fn)
+        normal-2    @(ns-resolve ns 'normal-2)
         
-        _          (tu/touch 'clj-reload.keep-vars)
-        _          (tu/reload)
-        ns'        (find-ns 'clj-reload.keep-vars)]
+        _           (tu/touch 'clj-reload.keep-vars)
+        _           (tu/reload)
+        ns'         (find-ns 'clj-reload.keep-vars)]
     
     (is (not= normal @(ns-resolve ns' 'normal)))
     (is (= atom @@(ns-resolve ns' '*atom)))
     (is (= just-var @(ns-resolve ns' 'just-var)))
     (is (= just-var-2 @(ns-resolve ns' 'just-var-2)))
+    (is (= private-var @(ns-resolve ns' 'private-var)))
     (is (= (first dependent) (first @(ns-resolve ns' 'dependent))))
     (is (not= (second dependent) (second @(ns-resolve ns' 'dependent))))
     
@@ -100,6 +102,13 @@
     (is (meta= private-fn (ns-resolve ns' 'private-fn)))
     
     (is (not= normal-2 @(ns-resolve ns' 'normal-2)))))
+
+(deftest keep-unsupported-test
+  (tu/init 'clj-reload.keep-unsupported)
+  (let [ns (find-ns 'clj-reload.keep-unsupported)
+        v  @(ns-resolve ns 'v)]
+    (tu/touch 'clj-reload.keep-unsupported)
+    (is (thrown? Exception (tu/reload)))))
 
 (deftest keep-type-test
   (tu/init 'clj-reload.keep-deftype)

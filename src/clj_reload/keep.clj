@@ -27,7 +27,7 @@
     (str/replace "-" "_")
     (str "." sym)))
 
-(def keep-methods-default
+(def keep-methods-defs
   {:resolve 
    (fn [ns sym keep]
      (when-some [var (resolve (symbol (name ns) (name sym)))]
@@ -40,7 +40,7 @@
    :patch
    (fn [ns sym keep]
      (str
-       "(def " (meta-str (:var keep)) sym " clj-reload.stash/" sym ")"))})
+       "(def " (meta-str (:var keep)) sym " @#'clj-reload.stash/" sym ")"))})
 
 (def keep-methods-deftype
   {:resolve 

@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.1.0"}
+io.github.tonsky/clj-reload {:mvn/version "0.1.1"}
 ```
 
 ## The problem

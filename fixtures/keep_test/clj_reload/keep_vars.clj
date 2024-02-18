@@ -13,13 +13,16 @@
 (def ^:clj-reload/keep just-var-2
   (rand-int Integer/MAX_VALUE))
 
+^:clj-reload/keep
+(def ^:private private-var
+  (rand-int Integer/MAX_VALUE))
+
 (def dependent
   [just-var (rand-int Integer/MAX_VALUE)])
 
 ^:clj-reload/keep
 (def ^{:k :v} meta-var
   (rand-int Integer/MAX_VALUE))
-
 
 ^:clj-reload/keep
 (defn public-fn [a])
