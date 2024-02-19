@@ -218,7 +218,7 @@ and then reload:
 Here’s how it works:
 
 - `defonce` works out of the box. No need to do anything.
-- `def`/`defn`/`deftype`/`defrecord`/`defprotocol` can be annotated with `^:clj-reload/keep` and can be persistet too.
+- `def`/`defn`/`deftype`/`defrecord`/`defprotocol` can be annotated with `^:clj-reload/keep` and can be persisted too.
 - Project-specific forms can be added by extending `clj-reload.core/keep-methods` multimethod.
 
 Why is this important? With `tools.namespace` you will structure your code in a way that will work with its reload implementation. For example, you’d probably move persistent state and protocols into separate namespaces, not because logic dictates it, but because reload library will not work otherwise.
@@ -253,7 +253,7 @@ It might be really hard to spot these errors during long development sessions.
 
 ## Comparison: `(require ... :reload-all)`
 
-Cloujure has `:reload` and `:reload-all` options for `require`. They do track upstream dependencies, but that’s about it.
+Clojure has `:reload` and `:reload-all` options for `require`. They do track upstream dependencies, but that’s about it.
 
 In our original example, if we do
 
