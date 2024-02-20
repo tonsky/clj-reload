@@ -1,6 +1,7 @@
 # 0.1.2 - Feb 20, 2024
 
-- Fixed parsing files with aliased keywords #2 
+- Fixed parsing files with aliased keywords #2
+- Support `:as-alias`
 
 # 0.1.1 - Feb 18, 2024
 
