@@ -139,8 +139,7 @@
         patched (StringBuilder.)]
     (loop []
       (.captureString rdr)
-      (let [form (binding [*read-eval* false]
-                   (read util/reader-opts rdr))
+      (let [form (util/read-form rdr)
             text (.getString rdr)]
         (cond
           (= :clj-reload.util/eof form)

@@ -18,6 +18,22 @@
    :features  #{:clj}
    :eof       ::eof})
 
+(def dummy-resolver
+  (reify clojure.lang.LispReader$Resolver
+    (currentNS [_]
+      'user)
+    (resolveClass [_ sym]
+      sym)
+    (resolveAlias [_ sym]
+      sym)
+    (resolveVar [_ sym]
+      sym)))
+
+(defn read-form [reader]
+  (binding [*read-eval* false
+            *reader-resolver* dummy-resolver]
+    (read reader-opts reader)))
+
 (defn throwable? [o]
   (instance? Throwable o))
 

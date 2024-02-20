@@ -33,7 +33,9 @@
                            [a.b.d]
                            [a.b.e :as e]
                            [a.b f g]
-                           [a.b [h :as h]])
+                           [a.b [h :as h]]
+                           [a.b.x :as-alias x]
+                           [a.b [y :as-alias y]])
                          (:require
                            a.b.i)
                          (:use
@@ -42,6 +44,7 @@
                        (defonce x 1)
                        ...
                        (require 'a.b.k)
+                       (require '[a.b.z :as-alias z])
                        ...
                        ^:clj-reload/keep
                        (defprotocol y 2)

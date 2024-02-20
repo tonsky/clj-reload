@@ -37,11 +37,14 @@
         (or
           (nil? (second decl))      ;; [a.b.d]
           (keyword? (second decl))) ;; [a.b.e :as e]
-        (recur body' (conj! result (first decl)))
+        (if (= :as-alias (second decl)) ;; [a.b.e :as-alias e]
+          (recur body' result)
+          (recur body' (conj! result (first decl))))
         
         :else ;; [a.b f [g :as g]]
         (let [prefix  (first decl)
               symbols (->> (next decl)
+                        (remove #(and (sequential? %) (= :as-alias (second %)))) ;; [a.b [g :as-alias g]]
                         (map #(if (symbol? %) % (first %)))
                         (map #(symbol (str (name prefix) "." (name %)))))]
           (recur body' (reduce conj! result symbols)))))))
@@ -75,8 +78,7 @@
   ([rdr file]
    (loop [ns   nil
           nses {}]
-     (let [form (binding [*read-eval* false]
-                  (read util/reader-opts rdr))
+     (let [form (util/read-form rdr)
            tag  (when (list? form)
                   (first form))]
        (cond
