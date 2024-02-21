@@ -87,11 +87,14 @@
          
          (= 'ns tag)
          (let [[ns requires] (parse-ns-form form)]
-           (recur ns (update nses ns util/assoc-some :requires requires :main-file file)))
+           (recur ns(update nses ns util/assoc-some
+                      :requires requires
+                      :ns-files (util/some-set file))))
           
          (= 'in-ns tag)
          (let [[_ ns] (expand-quotes form)]
-           (recur ns (assoc nses ns nil)))
+           (recur ns (update nses ns util/assoc-some 
+                       :in-ns-files (util/some-set file))))
         
          (and (nil? ns) (#{'require 'use} tag))
          (throw (ex-info (str "Unexpected " tag " before ns definition in " file) {:form form}))

@@ -7,7 +7,7 @@
     [clojure.test :refer [is are deftest testing use-fixtures]]))
 
 (defn reset []
-  (tu/reset '[two-nses-second two-nses split o n m l i j k f a g h d c e b]))
+  (tu/reset '[two-nses-second two-nses split o n m l i j k f a g h d c e double b]))
 
 (defn wrap-test [f]
   (binding [tu/*dir* "fixtures/core_test"]
@@ -99,6 +99,29 @@
     (is (= '["Unloading" split "Loading" split] (tu/trace)))
     (is (= 2 @(resolve 'split/split-part)))))
 
+(deftest reload-double-test
+  (tu/init 'double)
+  (is (= :a @(resolve 'double/a)))
+  (tu/touch 'double)
+  (tu/reload)
+  (is (= '["Unloading" double "Loading" double double] (tu/trace)))
+  (is (= :a @(resolve 'double/a)))
+  (is (= :b @(resolve 'double/b)))
+  (tu/with-changed 'double "(ns double) (def a :a2)"
+    (tu/reload)
+    (is (= '["Unloading" double "Loading" double double] (tu/trace)))
+    (is (= :a2 @(resolve 'double/a)))
+    (is (= :b @(resolve 'double/b))))
+  (tu/with-changed 'double-b "(ns double) (def b :b2)"
+    (tu/reload)
+    (is (= '["Unloading" double "Loading" double double] (tu/trace)))
+    (is (= :a @(resolve 'double/a)))
+    (is (= :b2 @(resolve 'double/b))))
+  (tu/reload)
+  (is (= '["Unloading" double "Loading" double double] (tu/trace)))
+  (is (= :a @(resolve 'double/a)))
+  (is (= :b @(resolve 'double/b))))
+
 (deftest exclude-test
   (let [opts {:require '[b e c d h g a f k j i l]}]
     (is (= '[] (modify (assoc opts :no-reload ['k]) 'k)))
@@ -112,8 +135,8 @@
 
 (deftest reload-all-test
   (tu/with-deleted 'err-runtime
-    (is (= '["Unloading" two-nses-second two-nses split m n o l i j k h f g a d c e b
-             "Loading" b e c d a g f h k j i l o n m split two-nses two-nses-second]
+    (is (= '["Unloading" two-nses-second two-nses split m n o l i j k h f g a d c e double b
+             "Loading" b double double e c d a g f h k j i l o n m split two-nses two-nses-second]
           (modify {:require '[] :only :all})))))
 
 (deftest reload-exception-test

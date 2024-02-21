@@ -7,36 +7,36 @@
 
 ; State :: {// config
 ;           
-;           :dirs        [<string> ...]     - where to look for files
-;           :no-unload   #{<symbol> ...}    - list of nses to skip unload
-;           :no-reload   #{<symbol> ...}    - list of nses to skip reload
-;           :reload-hook <symbol>           - if function with this name exists,
-;                                             it will be called after reloading.
-;                                             default: after-ns-reload
-;           :unload-hook <symbol>           - if function with this name exists,
-;                                             it will be called before unloading.
-;                                             default: before-ns-unload
+;           :dirs        [<string> ...]       - where to look for files
+;           :no-unload   #{<symbol> ...}      - list of nses to skip unload
+;           :no-reload   #{<symbol> ...}      - list of nses to skip reload
+;           :reload-hook <symbol>             - if function with this name exists,
+;                                               it will be called after reloading.
+;                                               default: after-ns-reload
+;           :unload-hook <symbol>             - if function with this name exists,
+;                                               it will be called before unloading.
+;                                               default: before-ns-unload
 ;           // working state
 ;
-;           :since       <long>             - last time list of files was scanned
-;           :files       {<file> -> File}   - all found files
-;           :namespaces  {<symbol> -> NS}   - all found namespaces
-;           :to-unload   #{<symbol> ...}    - list of nses pending unload
-;           :to-load     #{<symbol> ...}}   - list of nses pending load
+;           :since       <long>               - last time list of files was scanned
+;           :files       {<file> -> File}     - all found files
+;           :namespaces  {<symbol> -> NS}     - all found namespaces
+;           :to-unload   #{<symbol> ...}      - list of nses pending unload
+;           :to-load     #{<symbol> ...}}     - list of nses pending load
 ;
-; File ::  {:namespaces #{<symbol> ...}     - nses defined in this file
-;           :modified   <modified>}         - lastModified
+; File ::  {:namespaces #{<symbol> ...}       - nses defined in this file
+;           :modified   <modified>}           - lastModified
 ;
-; NS   ::  {:main-file <file>               - “main” file ns is defined in
-;           :files     #{<file> ...}        - all the files ns is defined in
-;           :requires  #{<symbol> ...}      - other nses this depends on
-;           :keep      {<symbol> -> Keep}}} - vars to keep between reloads
+; NS   ::  {:ns-files    #{<file> ...}        - files containing (ns ...) declaration
+;           :in-ns-files #{<file> ...}        - files containing (in-ns ...) declaration
+;           :requires    #{<symbol> ...}      - other nses this depends on
+;           :keep        {<symbol> -> Keep}}} - vars to keep between reloads
 ;
-; Keep ::  {:tag      <symbol>              - type of value ('def, 'defonce etc)
-;           :form     <any>                 - full source form, just in case
+; Keep ::  {:tag      <symbol>                - type of value ('def, 'defonce etc)
+;           :form     <any>                   - full source form, just in case
 ;                          
-;           // stashed vars                 - one or more of these will contain
-;                                             values remembered between reloads
+;           // stashed vars                   - one or more of these will contain
+;                                               values remembered between reloads
 ;           :var      Var?
 ;           :ctor     Var?
 ;           :map-ctor Var?
@@ -53,7 +53,7 @@
                                (already-read file)
                                (parse/read-file file))
             :when (not (util/throwable? namespace))]
-      (vswap! *res update name #(merge-with into % namespace {:files #{file}})))
+      (vswap! *res update name #(merge-with into % namespace)))
     @*res))
 
 (defn- scan-impl [files-before dirs since]
@@ -273,8 +273,8 @@
         
          (not-empty (:to-load state))
          (let [[ns & to-load'] (:to-load state)
-               file (-> state :namespaces ns :main-file)]
-           (if-some [ex (ns-load ns file (-> state :namespaces ns :keep) (:reload-hook state))]
+               files (-> state :namespaces ns :ns-files)] ;; TODO #3
+           (if-some [ex (some #(ns-load ns % (-> state :namespaces ns :keep) (:reload-hook state)) files)]
              (do
                (swap! *state update :to-unload #(cons ns %))
                (if (:throw opts true)

@@ -77,26 +77,45 @@ Unexpected :require form: [789 a b c]
   (let [{files :files'
          nses  :namespaces'} (binding [util/*log-fn* nil]
                                (@#'reload/scan-impl nil ["fixtures"] 0))]
-    (is (= '#{}
-          (get-in files [(io/file "fixtures/core_test/no_ns.clj") :namespaces])))
+    (testing "no-ns"
+      (is (= '#{}
+            (get-in files [(io/file "fixtures/core_test/no_ns.clj") :namespaces]))))
     
-    (is (= '#{two-nses two-nses-second}
-          (get-in files [(io/file "fixtures/core_test/two_nses.clj") :namespaces])))
+    (testing "two-nses"
+      (is (= '#{two-nses two-nses-second}
+            (get-in files [(io/file "fixtures/core_test/two_nses.clj") :namespaces])))
     
-    (is (= '#{split}
-          (get-in files [(io/file "fixtures/core_test/split.clj") :namespaces])))
+      (is (= '#{clojure.string}
+            (get-in nses ['two-nses :requires])))
     
-    (is (= '#{split}
-          (get-in files [(io/file "fixtures/core_test/split_part.clj") :namespaces])))
-        
-    (is (= '#{clojure.string}
-          (get-in nses ['two-nses :requires])))
+      (is (= '#{clojure.set}
+            (get-in nses ['two-nses-second :requires]))))
     
-    (is (= '#{clojure.set}
-          (get-in nses ['two-nses-second :requires])))
+    (testing "split"
+      (is (= '#{split}
+            (get-in files [(io/file "fixtures/core_test/split.clj") :namespaces])))
     
-    (is (= '#{clojure.string clojure.set}
-          (get-in nses ['split :requires])))
+      (is (= '#{split}
+            (get-in files [(io/file "fixtures/core_test/split_part.clj") :namespaces])))
     
-    (is (= (io/file "fixtures/core_test/split.clj")
-          (get-in nses ['split :main-file])))))
+      (is (= '#{clojure.string clojure.set}
+            (get-in nses ['split :requires])))
+    
+      (is (= #{(io/file "fixtures/core_test/split.clj")}
+            (get-in nses ['split :ns-files])))
+    
+      (is (= #{(io/file "fixtures/core_test/split_part.clj")}
+            (get-in nses ['split :in-ns-files]))))
+
+    (testing "double"    
+      (is (= '#{double}
+            (get-in files [(io/file "fixtures/core_test/double.clj") :namespaces])))
+      
+      (is (= '#{double}
+            (get-in files [(io/file "fixtures/core_test/double_b.clj") :namespaces])))
+          
+      (is (= '#{clojure.string clojure.set}
+            (get-in nses ['double :requires])))
+
+      (is (= #{(io/file "fixtures/core_test/double.clj") (io/file "fixtures/core_test/double_b.clj")}
+            (get-in nses ['double :ns-files]))))))
