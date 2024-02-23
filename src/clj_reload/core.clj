@@ -30,6 +30,7 @@
 ; NS   ::  {:ns-files    #{<file> ...}        - files containing (ns ...) declaration
 ;           :in-ns-files #{<file> ...}        - files containing (in-ns ...) declaration
 ;           :requires    #{<symbol> ...}      - other nses this depends on
+;           :meta        {}                   - metadata from ns symbol
 ;           :keep        {<symbol> -> Keep}}} - vars to keep between reloads
 ;
 ; Keep ::  {:tag      <symbol>                - type of value ('def, 'defonce etc)
@@ -170,6 +171,8 @@
         
         unload?          #(and
                             (loaded %)
+                            (not (:clj-reload/no-unload (:meta (namespaces %))))
+                            (not (:clj-reload/no-reload (:meta (namespaces %))))
                             (not (no-unload %))
                             (not (no-reload %)))
         deps             (parse/dependees namespaces)
@@ -184,6 +187,7 @@
         
         load?            #(and
                             (loaded %)
+                            (not (:clj-reload/no-reload (:meta (namespaces %))))
                             (not (no-reload %))
                             (namespaces' %))
         deps'            (parse/dependees namespaces')
@@ -329,3 +333,9 @@
 
 (defmethod keep-methods 'defprotocol [_]
   keep/keep-methods-defprotocol)
+
+;; Initialize with classpath-dirs to support “init-less” workflow
+;; See https://github.com/tonsky/clj-reload/pull/4
+;; and https://github.com/clojure-emacs/cider-nrepl/issues/849
+(init
+  {:dirs (util/classpath-dirs)})

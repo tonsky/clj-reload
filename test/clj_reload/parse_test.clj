@@ -54,6 +54,9 @@
   (is (= '{x nil}
         (read-str "(ns x)")))
   
+  (is (= '{x {:meta {:clj-reload/no-reload true}}}
+        (read-str "(ns ^:clj-reload/no-reload x)")))
+  
   (is (= '{x nil}
         (read-str "(in-ns 'x)"))))
 

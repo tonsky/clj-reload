@@ -4,7 +4,8 @@
     [clojure.string :as str])
   (:import
     [clojure.lang LineNumberingPushbackReader]
-    [java.io File StringReader]))
+    [java.io File StringReader]
+    [java.net URLClassLoader]))
 
 (def ^:dynamic *log-fn*
   println)
@@ -93,6 +94,9 @@
 (defn file? [^File f]
   (some-> f .isFile))
 
+(defn directory? [^File f]
+  (some-> f .isDirectory))
+
 (defn file-name [^File f]
   (some-> f .getName))
 
@@ -114,3 +118,29 @@
   (let [[_ ext] (re-matches #".*\.([^.]+)" (.getName file))
         path    (-> ns str (str/replace #"\-" "_") (str/replace #"\." "/") (str "." ext))]
     (Compiler/load (StringReader. content) path (.getName file))))
+
+(defn loader-classpath []
+  (->> (clojure.lang.RT/baseLoader)
+    (iterate #(.getParent ^ClassLoader %))
+    (take-while identity)
+    (filter #(instance? URLClassLoader %))
+    (mapcat #(.getURLs ^URLClassLoader %))
+    (map io/as-file)
+    (filter directory?)))
+
+(defn system-classpath []
+  (-> (System/getProperty "java.class.path")
+    (str/split (re-pattern (System/getProperty "path.separator")))
+    (->> (map io/as-file)
+      (filter directory?))))
+
+(defn classpath-dirs []
+  (->> (or
+         (not-empty (loader-classpath))
+         (not-empty (system-classpath)))
+    (distinct)
+    (mapv file-path)))
+
+(comment
+  (classpath-dirs)
+  (system-classpath))

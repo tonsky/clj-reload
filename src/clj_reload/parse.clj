@@ -87,9 +87,10 @@
          
          (= 'ns tag)
          (let [[ns requires] (parse-ns-form form)]
-           (recur ns(update nses ns util/assoc-some
-                      :requires requires
-                      :ns-files (util/some-set file))))
+           (recur ns (update nses ns util/assoc-some
+                       :meta     (meta ns)
+                       :requires requires
+                       :ns-files (util/some-set file))))
           
          (= 'in-ns tag)
          (let [[_ ns] (expand-quotes form)]

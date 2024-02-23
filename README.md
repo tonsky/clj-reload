@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.1.3"}
+io.github.tonsky/clj-reload {:mvn/version "0.2.0"}
 ```
 
 ## The problem
@@ -226,6 +226,22 @@ Why is this important? With `tools.namespace` you will structure your code in a 
 `clj-reload` allows you to structure the code the way business logic dictates it, without the need to adapt to developer workflow.
 
 Simply put: the fact that you use `clj-reload` during development does not spill into your production code.
+
+## Usage: init-less workflow
+
+Sometimes it might be useful to integrate `clj-reload` into your system-wide profile or into tool like CIDER to be available in all your projects without explicitly adding it as a dependency.
+
+To support that, `clj-reload`:
+
+- Lets you skip `init`, in which case it’ll initialize with every directory it can find on classpath,
+- Supports `:clj-reload/no-reload` and `:clj-reload/no-unload` meta on namespace symbol, like this:
+
+```
+(ns ^:clj-reload/no-reload no-reload
+  (:require ...))
+```
+
+In that case, you can just call `clj-reload.core/reload` and it should work with default settings.
 
 ## Comparison: Evaluating buffer
 

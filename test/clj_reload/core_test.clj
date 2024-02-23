@@ -7,7 +7,7 @@
     [clojure.test :refer [is are deftest testing use-fixtures]]))
 
 (defn reset []
-  (tu/reset '[two-nses-second two-nses split o n m l i j k f a g h d c e double b]))
+  (tu/reset '[two-nses-second two-nses split o n no-unload m l i j k f a g h d c e double b]))
 
 (defn wrap-test [f]
   (binding [tu/*dir* "fixtures/core_test"]
@@ -136,7 +136,7 @@
 (deftest reload-all-test
   (tu/with-deleted 'err-runtime
     (is (= '["Unloading" two-nses-second two-nses split m n o l i j k h f g a d c e double b
-             "Loading" b double double e c d a g f h k j i l o n m split two-nses two-nses-second]
+             "Loading" b double double e c d a g f h k j i l no-unload o n m split two-nses two-nses-second]
           (modify {:require '[] :only :all})))))
 
 (deftest reload-exception-test
@@ -272,3 +272,25 @@
     (is (= '["Unloading" m n o "Loading" o n "  failed to load" n] (tu/trace))))
   (tu/reload)
   (is (= '["Unloading" n "Loading" n m] (tu/trace))))
+
+(deftest no-unload-meta-test
+  (tu/init 'no-unload)
+  (let [rand1 @(resolve 'no-unload/rand1)
+        rand2 @(resolve 'no-unload/rand2)]
+    (tu/with-changed 'no-unload #ml "(ns ^:clj-reload/no-unload no-unload)
+                                     
+                                     (def rand1
+                                       (rand-int Integer/MAX_VALUE))"
+      (tu/reload)
+      (let [rand1' @(resolve 'no-unload/rand1)
+            rand2' @(resolve 'no-unload/rand2)]
+        (is (not= rand1' rand1))
+        (is (= rand2' rand2))))))
+
+(deftest no-reload-meta-test
+  (tu/init 'no-reload)
+  (let [rand1  @(resolve 'no-reload/rand1)
+        _      (tu/touch 'no-reload)
+        _      (tu/reload)
+        rand1' @(resolve 'no-reload/rand1)]
+    (is (= rand1' rand1))))

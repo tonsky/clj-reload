@@ -1,3 +1,10 @@
+# 0.2.0 - Feb 23, 2024
+
+Support optional “init-less” workflow:
+
+- Initialize by default with all dirs on classpath
+- Support `:clj-reload/no-reload` and `:clj-reload/no-unload` meta on ns
+
 # 0.1.3 - Feb 21, 2024
 
 - Support namespaces defined in multiple files #3
