@@ -3,6 +3,7 @@
     [clj-reload.keep :as keep]
     [clj-reload.parse :as parse]
     [clj-reload.util :as util]
+    [clojure.java.classpath :as classpath]
     [clojure.java.io :as io]))
 
 ; State :: {// config
@@ -257,7 +258,11 @@
    (reload nil))
   ([opts]
    (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
-     (swap! *state scan opts)
+     (if (empty? @*state)
+       (do
+         (init {:dirs (classpath/classpath-directories)})
+         (swap! *state scan (assoc opts :only :all)))
+       (swap! *state scan opts))
      (loop [unloaded []
             loaded   []
             state    @*state]
