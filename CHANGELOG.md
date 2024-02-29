@@ -1,3 +1,7 @@
+# 0.3.0 - Feb 29, 2024
+
+- Support passing regexp as `:only` option
+
 # 0.2.0 - Feb 23, 2024
 
 Support optional “init-less” workflow:

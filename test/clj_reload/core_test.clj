@@ -133,10 +133,12 @@
   (is (= '["Unloading" f g a d c e b "Loading" b e c d a g f] (modify {:require '[a f] :only :loaded})))
   (is (= '["Unloading" h f g a d c e b "Loading" b e c d a g f h] (modify {:require '[a f h] :only :loaded}))))
 
+(deftest reload-regexp-test
+  (is (= '["Unloading" a "Loading" a i] (modify {:require '[a f] :only #"(a|i)"}))))
+
 (deftest reload-all-test
   (tu/with-deleted 'err-runtime
-    (is (= '["Unloading" two-nses-second two-nses split m n o l i j k h f g a d c e double b
-             "Loading" b double double e c d a g f h k j i l no-unload o n m split two-nses two-nses-second]
+    (is (= '["Loading" b double double e c d a g f h k j i l no-unload o n m split two-nses two-nses-second]
           (modify {:require '[] :only :all})))))
 
 (deftest reload-exception-test

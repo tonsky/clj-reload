@@ -145,14 +145,14 @@
     (fn [coll]
       (filter (set coll) sorted))))
 
+(defn nses-match [nses re]
+  (filter #(re-matches re (str %)) nses))
+
 (defn- scan [state opts]
   (let [{:keys [dirs since to-load to-unload no-unload no-reload files namespaces]} state
         {:keys [only] :or {only :changed}} opts
         now              (util/now)
-        loaded           (case only
-                           :changed @@#'clojure.core/*loaded-libs*
-                           :loaded  @@#'clojure.core/*loaded-libs*
-                           :all     (constantly true))
+        loaded           @@#'clojure.core/*loaded-libs*
         {:keys [broken
                 files'
                 namespaces'
@@ -160,7 +160,10 @@
                 to-load']} (case only
                              :changed (scan-impl files dirs since)
                              :loaded  (scan-impl files dirs 0)
-                             :all     (scan-impl files dirs 0))
+                             :all     (scan-impl files dirs 0)
+                             #_regex  (-> (scan-impl files dirs 0)
+                                        (update :to-unload' nses-match only)
+                                        (update :to-load'   nses-match only)))
         
         _                (doseq [[ns {:keys [exception]}] broken
                                  :when (loaded ns)
@@ -186,7 +189,11 @@
                            (reverse))
         
         load?            #(and
-                            (loaded %)
+                            (case only
+                              :changed (loaded %)
+                              :loaded  (loaded %)
+                              :all     true
+                              #_regex  (re-matches only (str %)))
                             (not (:clj-reload/no-reload (:meta (namespaces %))))
                             (not (no-reload %))
                             (namespaces' %))
@@ -244,6 +251,7 @@
      :log-fn :: (fn [& args]) - fn to display unload/reload status
      :only   :: :changed      - default. Only reloads changed already loaded files
               | :loaded       - Reload all loaded files
+              | <Pattern>     - Reload all nses matching this pattern
               | :all          - Reload everything it can find in dirs
    
    Returns map of what was reloaded
