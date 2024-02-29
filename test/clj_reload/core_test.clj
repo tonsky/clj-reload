@@ -252,9 +252,11 @@
   (is (= [:unload-m :reload-m] @@(resolve 'o/*atom))))
 
 (deftest unload-hook-fail-test
-  (tu/with-changed 'm #ml "(ns m (:require n o))
-                                    (defn before-ns-unload []
-                                      (/ 1 0))"
+  (tu/with-changed 'm "(ns m
+                         (:require n o))
+                       
+                       (defn before-ns-unload []
+                         (/ 1 0))"
     (tu/init 'm)
     (tu/touch 'm)
     (tu/reload)
@@ -264,9 +266,11 @@
 
 (deftest reload-hook-fail-test
   (tu/init 'm)
-  (tu/with-changed 'n #ml "(ns n (:require o))
-                                    (defn after-ns-reload []
-                                      (/ 1 0))"
+  (tu/with-changed 'n "(ns n
+                         (:require o))
+                       
+                       (defn after-ns-reload []
+                         (/ 1 0))"
     (tu/touch 'o)
     (is (thrown? Exception (tu/reload)))
     (is (= '["Unloading" m n o "Loading" o n "  failed to load" n] (tu/trace))))
@@ -277,10 +281,10 @@
   (tu/init 'no-unload)
   (let [rand1 @(resolve 'no-unload/rand1)
         rand2 @(resolve 'no-unload/rand2)]
-    (tu/with-changed 'no-unload #ml "(ns ^:clj-reload/no-unload no-unload)
-                                     
-                                     (def rand1
-                                       (rand-int Integer/MAX_VALUE))"
+    (tu/with-changed 'no-unload "(ns ^:clj-reload/no-unload no-unload)
+                                 
+                                 (def rand1
+                                   (rand-int Integer/MAX_VALUE))"
       (tu/reload)
       (let [rand1' @(resolve 'no-unload/rand1)
             rand2' @(resolve 'no-unload/rand2)]

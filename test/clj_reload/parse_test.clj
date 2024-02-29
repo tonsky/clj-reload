@@ -27,29 +27,29 @@
                         :form (defonce x 1)}
                      y {:tag defprotocol
                         :form (defprotocol y 2)}}}}
-        (read-str #ml "(ns x
-                         (:require
-                           a.b.c
-                           [a.b.d]
-                           [a.b.e :as e]
-                           [a.b f g]
-                           [a.b [h :as h]]
-                           [a.b.x :as-alias x]
-                           [a.b [y :as-alias y]])
-                         (:require
-                           a.b.i)
-                         (:use
-                           a.b.j))
-                       ...
-                       (defonce x 1)
-                       ...
-                       (require 'a.b.k)
-                       (require '[a.b.z :as-alias z])
-                       ...
-                       ^:clj-reload/keep
-                       (defprotocol y 2)
-                       ...
-                       (use 'a.b.l)")))
+        (read-str "(ns x
+                     (:require
+                       a.b.c
+                       [a.b.d]
+                       [a.b.e :as e]
+                       [a.b f g]
+                       [a.b [h :as h]]
+                       [a.b.x :as-alias x]
+                       [a.b [y :as-alias y]])
+                     (:require
+                       a.b.i)
+                     (:use
+                       a.b.j))
+                   ...
+                   (defonce x 1)
+                   ...
+                   (require 'a.b.k)
+                   (require '[a.b.z :as-alias z])
+                   ...
+                   ^:clj-reload/keep
+                   (defprotocol y 2)
+                   ...
+                   (use 'a.b.l)")))
   
   (is (= '{x nil}
         (read-str "(ns x)")))
@@ -61,11 +61,11 @@
         (read-str "(in-ns 'x)"))))
 
 (deftest read-file-errors-test
-  (let [file #ml "(ns x
-                    (:require 123)
-                    (:require [345])
-                    (:require [567 :as a])
-                    (:require [789 a b c]))"
+  (let [file "(ns x
+                (:require 123)
+                (:require [345])
+                (:require [567 :as a])
+                (:require [789 a b c]))"
         out  (StringWriter.)
         res  (binding [*out* out]
                (read-str file))]

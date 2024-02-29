@@ -1,11 +1,24 @@
 (ns user
   (:require
-    [duti.all :as duti]))
+    [clojure.tools.namespace.repl :as ns]
+    [clojure.tools.namespace.track :as track]
+    [duti.core :as duti]))
 
-(duti/set-dirs "src" "dev" "test")
+(ns/disable-reload!)
 
-(def reload
-  duti/reload)
+(ns/set-refresh-dirs "src" "dev" "test")
+
+(defn reload
+  ([]
+   (reload nil))
+  ([opts]
+   (set! *warn-on-reflection* true)
+   (let [tracker (ns/scan opts)
+         cnt     (count (::track/load tracker))
+         res     (apply ns/refresh-scanned (mapcat vec opts))]
+     (when (instance? Throwable res)
+       (throw res))
+     (str "Reloaded " cnt " namespace" (when (> cnt 1) "s")))))
 
 (defn -main [& args]
   (alter-var-root #'*command-line-args* (constantly args))
@@ -13,12 +26,11 @@
     (duti/start-socket-repl {:port (some-> port parse-long)})))
 
 (defn test-all []
-  (require 'clj-reload.core-test 'clj-reload.keep-test 'clj-reload.parse-test)
   (reload)
   (duti/test-throw #"clj-reload\..*-test"))
 
 (defn -test-main [_]
-  (require 'clj-reload.core-test 'clj-reload.keep-test 'clj-reload.parse-test)
+  (reload)
   (duti/test-exit #"clj-reload\..*-test"))
 
 (comment

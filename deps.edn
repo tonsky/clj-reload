@@ -6,5 +6,5 @@
   {:jvm-opts ["-ea"]
    :extra-paths ["dev" "test" "fixtures/core_test" "fixtures/keep_test"]
    :extra-deps 
-   {io.github.tonsky/duti {:git/sha "8c3c6cdff5fbc909db6da4b2711f9ec2e91dcfb1"
-                           #_#_:local/root "/Users/tonsky/ws/duti"}}}}}
+   {org.clojure/tools.namespace {:mvn/version "1.5.0"}
+    io.github.tonsky/duti       {:git/sha "1ed88c121b27c7980dc5a86cb6c445b8581e8d06"}}}}}

@@ -41,25 +41,25 @@
           "before (def *atom 777) (reset! *atom nil) after"
           {'(def *atom) "(def *atom 888)"})))
   
-  (is (=  #ml "(ns keep)
-               
-                  asdas
-               
-               8 10  (def *atom 777)
-                            
-               
-               (def just-var 888)
-                           "
+  (is (=  "(ns keep)
+           
+              asdas
+           
+           8 10  (def *atom 777)
+                        
+           
+           (def just-var 888)
+                       "
         (keep/patch-file
-          #ml "(ns keep)
-               
-                  asdas
-               
-               8 10  (defonce *atom
-                 (atom nil))
-               
-               (defonce just-var
-                 (Object.))"
+          "(ns keep)
+           
+              asdas
+           
+           8 10  (defonce *atom
+             (atom nil))
+           
+           (defonce just-var
+             (Object.))"
           {'(defonce *atom) "(def *atom 777)"
            '(defonce just-var) "(def just-var 888)"}))))
 
