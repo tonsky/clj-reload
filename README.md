@@ -1,6 +1,6 @@
-# clj-reload
+![](./.extras/logo.png)
 
-Smarter way to reload Clojure code. It tracks namespace dependencies, unloads, and then loads them in the correct topological order.
+Smarter way to reload Clojure code. Clj-Reload tracks namespace dependencies, unloads namespaces, and then loads them in the correct topological order.
 
 This is only about namespace dependencies within a single project. It has nothing to do with Leiningen, Maven, JAR files, or repositories.
 
@@ -130,7 +130,15 @@ By default, clj-reload will only reload namespaces that were both:
 
 If you pass `:only :loaded` option to `reload`, it will reload all currently loaded namespaces, no matter if they were changed or not.
 
-If you pass `:only :all` option to `reload`, it will reload all namespaces it can find in the specified `:dirs`, no matter whether loaded or changed.
+If you pass regexp to `:only`, clj-reload will search for matching namespaces and load them. This is useful, for example, if you want to find all tests namespaces:
+
+```
+(reload/reload {:only #".*\.-test"})
+```
+
+This will find and load all namespaces, no matter if they were loaded before, that match this regexp.
+
+Finally, if you pass `:only :all` option to `reload`, it will reload all namespaces it can find in the specified `:dirs`, no matter whether loaded or changed.
 
 ## Usage: Skipping reload
 
