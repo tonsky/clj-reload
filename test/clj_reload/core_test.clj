@@ -91,6 +91,16 @@
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e)))
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
 
+(deftest unload-test
+  (tu/init 'a 'f 'h)
+  (tu/touch 'e)
+  (tu/unload)
+  (is (= '["Unloading" h f a d c e] (tu/trace)))
+  (tu/unload)
+  (is (= '[] (tu/trace)))
+  (tu/reload)
+  (is (= '["Loading" e c d a f h] (tu/trace))))
+
 (deftest reload-split-test
   (tu/init 'split)
   (is (= 1 @(resolve 'split/split-part)))

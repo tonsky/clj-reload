@@ -244,6 +244,29 @@
       (util/log "  failed to load" ns t)
       t)))
 
+(defn unload
+  "Same as `reload`, but does not loads namespaces back"
+  ([]
+   (unload nil))
+  ([opts]
+   (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
+     (swap! *state scan opts)
+     (loop [unloaded []]
+       (let [state @*state]
+         (if (not-empty (:to-unload state))
+           (let [[ns & to-unload'] (:to-unload state)
+                 keeps             (keep/resolve-keeps ns (-> state :namespaces ns :keep))]
+             (ns-unload ns (:unload-hook state))
+             (swap! *state
+               #(-> % 
+                  (assoc :to-unload to-unload')
+                  (update :namespaces update ns assoc :keep keeps)))
+             (recur (conj unloaded ns)))
+           (do
+             (when (empty? unloaded)
+               (util/log "Nothing to unload"))
+             {:unloaded unloaded})))))))
+
 (defn reload
   "Options:
    
@@ -269,47 +292,35 @@
    (reload nil))
   ([opts]
    (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
-     (swap! *state scan opts)
-     (loop [unloaded []
-            loaded   []
-            state    @*state]
-       (cond
-         (not-empty (:to-unload state))
-         (let [[ns & to-unload'] (:to-unload state)
-               keeps             (keep/resolve-keeps ns (-> state :namespaces ns :keep))
-               _                 (ns-unload ns (:unload-hook state))
-               state'            (swap! *state #(-> % 
-                                                  (assoc :to-unload to-unload')
-                                                  (update :namespaces update ns assoc :keep keeps)))]
-           (recur (conj unloaded ns) loaded state'))
-        
-         (not-empty (:to-load state))
-         (let [[ns & to-load'] (:to-load state)
-               files (-> state :namespaces ns :ns-files)] ;; TODO #3
-           (if-some [ex (some #(ns-load ns % (-> state :namespaces ns :keep) (:reload-hook state)) files)]
-             (do
-               (swap! *state update :to-unload #(cons ns %))
-               (if (:throw opts true)
-                 (throw
-                   (ex-info
-                     (str "Failed to load namespace: " ns)
+     (let [{:keys [unloaded]} (unload opts)]
+       (loop [loaded []]
+         (let [state @*state]
+           (if (not-empty (:to-load state))
+             (let [[ns & to-load'] (:to-load state)
+                   files (-> state :namespaces ns :ns-files)]
+               (if-some [ex (some #(ns-load ns % (-> state :namespaces ns :keep) (:reload-hook state)) files)]
+                 (do
+                   (swap! *state update :to-unload #(cons ns %))
+                   (if (:throw opts true)
+                     (throw
+                       (ex-info
+                         (str "Failed to load namespace: " ns)
+                         {:unloaded  unloaded
+                          :loaded    loaded
+                          :failed    ns}
+                         ex))
                      {:unloaded  unloaded
                       :loaded    loaded
-                      :failed    ns}
-                     ex))
-                 {:unloaded  unloaded
-                  :loaded    loaded
-                  :failed    ns
-                  :exception ex}))
-             (let [state' (swap! *state assoc :to-load to-load')]
-               (recur unloaded (conj loaded ns) state'))))
-         
-         :else
-         (do
-           (when (and (empty? unloaded) (empty? loaded))
-             (util/log "Nothing to reload"))
-           {:unloaded unloaded
-            :loaded   loaded}))))))
+                      :failed    ns
+                      :exception ex}))
+                 (do
+                   (swap! *state assoc :to-load to-load')
+                   (recur (conj loaded ns)))))
+             (do
+               (when (empty? loaded)
+                 (util/log "Nothing to reload"))
+               {:unloaded unloaded
+                :loaded   loaded}))))))))
 
 (defmulti keep-methods
   (fn [tag]

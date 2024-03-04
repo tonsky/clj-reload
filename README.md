@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.3.0"}
+io.github.tonsky/clj-reload {:mvn/version "0.4.0"}
 ```
 
 ## The problem
@@ -97,9 +97,13 @@ Use:
 ; => {:unloaded [a b c], :loaded [c b a]}
 ```
 
+Works best if assigned to a shortcut in your editor.
+
+## Usage: recovering from errors
+
 `reload` can be called multiple times. If reload fails, fix the error and call `reload` again.
 
-Works best if assigned to a shortcut in your editor.
+Alternatively, you can call `unload` which will unload all changed code and will not try loading it back. Fix the code and call `reload` again to load it back.
 
 ## Usage: Return value
 

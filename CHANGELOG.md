@@ -1,3 +1,7 @@
+# 0.4.0 - Mar 4, 2024
+
+- Added `unload`
+
 # 0.3.0 - Feb 29, 2024
 
 - Support passing regexp as `:only` option

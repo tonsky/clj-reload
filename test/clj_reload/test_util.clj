@@ -91,6 +91,13 @@
     (when-not (empty? nses)
       (apply require nses))))
 
+(defn unload
+  ([]
+   (unload nil))
+  ([opts]
+   (reload/unload
+     (merge {:log-fn log-fn} opts))))
+
 (defn reload
   ([]
    (reload nil))
