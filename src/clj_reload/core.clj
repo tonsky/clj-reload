@@ -148,6 +148,13 @@
 (defn nses-match [nses re]
   (filter #(re-matches re (str %)) nses))
 
+(defn carry-keeps [from to]
+  (util/for-map [[ns-sym ns] to]
+    [ns-sym (assoc ns :keep
+              (merge-with merge
+                (get-in from [ns-sym :keep])
+                (:keep ns)))]))
+
 (defn- scan [state opts]
   (let [{:keys [dirs since to-load to-unload no-unload no-reload files namespaces]} state
         {:keys [only] :or {only :changed}} opts
@@ -208,7 +215,7 @@
     (assoc state
       :since      since'
       :files      files'
-      :namespaces namespaces'
+      :namespaces (carry-keeps namespaces namespaces')
       :to-unload  to-unload''
       :to-load    to-load'')))
 
@@ -260,7 +267,7 @@
              (swap! *state
                #(-> % 
                   (assoc :to-unload to-unload')
-                  (update :namespaces update ns assoc :keep keeps)))
+                  (update :namespaces update ns update :keep util/deep-merge keeps)))
              (recur (conj unloaded ns)))
            (do
              (when (empty? unloaded)
@@ -314,7 +321,9 @@
                       :failed    ns
                       :exception ex}))
                  (do
-                   (swap! *state assoc :to-load to-load')
+                   (swap! *state #(-> %
+                                    (assoc :to-load to-load')
+                                    (update-in [:namespaces ns] dissoc :keep)))
                    (recur (conj loaded ns)))))
              (do
                (when (empty? loaded)

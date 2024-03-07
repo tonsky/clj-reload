@@ -13,7 +13,9 @@
         clj-reload.keep-defprotocol
         clj-reload.keep-defrecord
         clj-reload.keep-deftype
-        clj-reload.keep-vars])
+        clj-reload.keep-vars
+        clj-reload.keep-downstream
+        clj-reload.keep-upstream])
     (f)))
 
 (use-fixtures :each wrap-test)
@@ -252,3 +254,38 @@
     (is (= :extend-meta (method extend-meta')))
     (is (= :extend-meta (method' extend-meta)))
     (is (= :extend-meta (method' extend-meta')))))
+
+(deftest keep-dependent-test
+  (tu/init 'clj-reload.keep-downstream)
+  (let [downstream  @(ns-resolve (find-ns 'clj-reload.keep-downstream) 'downstream-var)
+        upstream    @(ns-resolve (find-ns 'clj-reload.keep-upstream)   'upstream-var)
+        _           (tu/touch 'clj-reload.keep-upstream)
+        _           (tu/reload)
+        downstream' @(ns-resolve (find-ns 'clj-reload.keep-downstream) 'downstream-var)
+        upstream'   @(ns-resolve (find-ns 'clj-reload.keep-upstream)   'upstream-var)]
+    (is (= downstream downstream'))
+    (is (= upstream upstream'))))
+        
+(deftest keep-dependent-broken-test
+  (tu/init 'clj-reload.keep-downstream)
+  (let [downstream  @(ns-resolve (find-ns 'clj-reload.keep-downstream) 'downstream-var)
+        upstream    @(ns-resolve (find-ns 'clj-reload.keep-upstream)   'upstream-var)]
+    (tu/with-changed 'clj-reload.keep-upstream "(ns clj-reload.keep-upstream)
+                                                oops!"
+      (is (thrown? Exception (tu/reload))))
+    (tu/reload)
+    (let [downstream' @(ns-resolve (find-ns 'clj-reload.keep-downstream) 'downstream-var)
+          upstream'   @(ns-resolve (find-ns 'clj-reload.keep-upstream)   'upstream-var)]
+      (is (= downstream downstream'))
+      (is (= upstream upstream')))))
+
+(deftest keep-changing-test
+  (tu/init 'clj-reload.keep-upstream)
+  (let [upstream @(ns-resolve (find-ns 'clj-reload.keep-upstream) 'upstream-var)]
+    (tu/with-changed 'clj-reload.keep-upstream "(ns clj-reload.keep-upstream)"
+      ;; remove defonce
+      (tu/reload))
+    ;; add defonce
+    (tu/reload)
+    (let [upstream' @(ns-resolve (find-ns 'clj-reload.keep-upstream) 'upstream-var)]
+      (is (not= upstream upstream')))))

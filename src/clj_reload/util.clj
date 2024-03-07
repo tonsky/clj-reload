@@ -70,6 +70,9 @@
         (transient (empty m))
         m))))
 
+(defn deep-merge [& ms]
+  (apply merge-with merge ms))
+
 (defmacro for-map [& body]
   `(into {}
      (for ~@body)))

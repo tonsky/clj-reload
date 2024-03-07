@@ -7,4 +7,4 @@
    :extra-paths ["dev" "test" "fixtures/core_test" "fixtures/keep_test"]
    :extra-deps 
    {org.clojure/tools.namespace {:mvn/version "1.5.0"}
-    io.github.tonsky/duti       {:git/sha "1ed88c121b27c7980dc5a86cb6c445b8581e8d06"}}}}}
+    io.github.tonsky/duti       {:git/sha "78bbf61953b9a685d02ff8cc63d04e4e8da81eb9"}}}}}

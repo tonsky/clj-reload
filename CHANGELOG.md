@@ -1,3 +1,7 @@
+# 0.4.1 - Mar 7, 2024
+
+- Fixed issues when adding/removing keeps
+
 # 0.4.0 - Mar 4, 2024
 
 - Added `unload`

@@ -27,7 +27,7 @@
 
 (defn test-all []
   (reload)
-  (duti/test-throw #"clj-reload\..*-test"))
+  (duti/test #"clj-reload\..*-test"))
 
 (defn -test-main [_]
   (reload)
