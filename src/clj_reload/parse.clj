@@ -2,7 +2,8 @@
   (:require
     [clj-reload.util :as util]
     [clojure.string :as str]
-    [clojure.walk :as walk])
+    [clojure.walk :as walk]
+    [clojure.set :as cs])
   (:import
     [java.io File]))
 
@@ -172,3 +173,29 @@
          (if node
            (recur (conj! res node) (dissoc deps node))
            (on-cycle deps all-deps)))))))
+
+(defn nodes-without-dependencies [all-deps]
+  (cs/difference
+   (set (keys all-deps))
+   (apply cs/union (vals all-deps))))
+
+(defn remove-edges [deps nodes]
+  (apply dissoc
+   (reduce-kv
+    (fn [acc k v]
+      (assoc acc k (apply disj v nodes)))
+    {}
+    deps)
+   nodes))
+
+(defn topo-sort'
+  ([all-deps]
+   (topo-sort' all-deps report-cycle))
+  ([all-deps on-cycle]
+   (loop [g all-deps res []]
+     (let [removable (nodes-without-dependencies g)]
+       (if (seq removable)
+         (recur (remove-edges g removable) (into res removable))
+         (if (seq g)
+           (report-cycle g all-deps) ; FAIL, circular dep
+           res))))))
