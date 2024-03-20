@@ -1,3 +1,7 @@
+# 0.4.2 - Mar 20, 2024
+
+- Speed up topo-sort #5
+
 # 0.4.1 - Mar 7, 2024
 
 - Fixed issues when adding/removing keeps

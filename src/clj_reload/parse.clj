@@ -123,7 +123,8 @@
   (let [*m (volatile! (transient {}))]
     (doseq [[from {tos :requires}] namespaces]
       (vswap! *m util/update! from #(or % #{}))
-      (doseq [to tos]
+      (doseq [to tos
+              :when (namespaces to)]
         (vswap! *m util/update! to util/conjs from)))
     (persistent! @*m)))
 
@@ -165,10 +166,8 @@
           deps all-deps]
      (if (empty? deps)
        (persistent! res)
-       (let [root (fn [node]
-                    (when (every? #(not (% node)) (vals deps))
-                      node))
-             node (->> (keys deps) (filter root) (sort) (first))]
-         (if node
-           (recur (conj! res node) (dissoc deps node))
+       (let [ends  (reduce into #{} (vals deps))
+             roots (->> (keys deps) (remove ends) (sort))]
+         (if (not (empty? roots))
+           (recur (reduce conj! res roots) (reduce dissoc deps roots))
            (on-cycle deps all-deps)))))))

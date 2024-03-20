@@ -42,7 +42,7 @@
     (is (= '["Unloading" a b "Loading" b a] (modify opts 'b)))
     (is (= '["Unloading" a c "Loading" c a] (modify opts 'c)))
     (is (= '["Unloading" f a d "Loading" d a f] (modify opts 'd)))
-    (is (= '["Unloading" h f a d c e "Loading" e c d a f h] (modify opts 'e)))
+    (is (= '["Unloading" f a h d c e "Loading" e c d h a f] (modify opts 'e)))
     (is (= '["Unloading" f "Loading" f] (modify opts 'f)))
     (is (= '["Unloading" f g "Loading" g f] (modify opts 'g)))
     (is (= '["Unloading" i "Loading" i] (modify opts 'i)))
@@ -51,16 +51,16 @@
     (is (= '["Unloading" l "Loading" l] (modify opts 'l)))
     (is (= '[] (modify opts)))
     (is (= '["Unloading" a c b "Loading" b c a] (modify opts 'a 'b 'c)))
-    (is (= '["Unloading" l i j k h f a d c e "Loading" e c d a f h k j i l] (modify opts 'e 'k 'l)))
-    (is (= '["Unloading" l i j k h f g a d c e b "Loading" b e c d a g f h k j i l] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
+    (is (= '["Unloading" i f a j h d c l k e "Loading" e k l c d h j a f i] (modify opts 'e 'k 'l)))
+    (is (= '["Unloading" i f a j h d c l k g e b "Loading" b e g k l c d h j a f i] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
 
 (deftest return-value-ok-test
   (tu/init 'a 'f 'h)
   (is (= {:unloaded '[]
           :loaded   '[]} (tu/reload)))
   (tu/touch 'e)
-  (is (= {:unloaded '[h f a d c e]
-          :loaded   '[e c d a f h]} (tu/reload))))
+  (is (= {:unloaded '[f a h d c e]
+          :loaded   '[e c d h a f]} (tu/reload))))
 
 (deftest return-value-fail-test
   (tu/init 'a 'f 'h)
@@ -70,22 +70,22 @@
       (tu/reload)
       (is (= "Should throw" "Didn't throw"))
       (catch Exception e
-        (is (= {:unloaded '[h f a d c e]
+        (is (= {:unloaded '[f a h d c e]
                 :loaded   '[e]
                 :failed   'c} (ex-data e))))))
   (is (= {:unloaded '[c]
-          :loaded   '[c d a f h]} (tu/reload))))
+          :loaded   '[c d h a f]} (tu/reload))))
 
 (deftest return-value-fail-safe-test
   (tu/init 'a 'f 'h)
   (tu/with-changed 'c "(ns c (:require e)) (/ 1 0)"
     (tu/touch 'e)
     (let [res (tu/reload {:throw false})]
-      (is (= {:unloaded '[h f a d c e]
+      (is (= {:unloaded '[f a h d c e]
               :loaded   '[e]
               :failed   'c} (dissoc res :exception)))))
   (is (= {:unloaded '[c]
-          :loaded   '[c d a f h]} (tu/reload))))
+          :loaded   '[c d h a f]} (tu/reload))))
 
 (deftest reload-active-test
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e)))
@@ -95,11 +95,11 @@
   (tu/init 'a 'f 'h)
   (tu/touch 'e)
   (tu/unload)
-  (is (= '["Unloading" h f a d c e] (tu/trace)))
+  (is (= '["Unloading" f a h d c e] (tu/trace)))
   (tu/unload)
   (is (= '[] (tu/trace)))
   (tu/reload)
-  (is (= '["Loading" e c d a f h] (tu/trace))))
+  (is (= '["Loading" e c d h a f] (tu/trace))))
 
 (deftest reload-split-test
   (tu/init 'split)
@@ -135,20 +135,20 @@
 (deftest exclude-test
   (let [opts {:require '[b e c d h g a f k j i l]}]
     (is (= '[] (modify (assoc opts :no-reload ['k]) 'k)))
-    (is (= '["Unloading" h f a d e "Loading" e d a f h] (modify (assoc opts :no-reload ['c]) 'e)))
-    (is (= '["Unloading" h f a d e "Loading" e c d a f h] (modify (assoc opts :no-unload ['c]) 'e)))))
+    (is (= '["Unloading" f a h d e "Loading" e d h a f] (modify (assoc opts :no-reload ['c]) 'e)))
+    (is (= '["Unloading" f a h d e "Loading" e c d h a f] (modify (assoc opts :no-unload ['c]) 'e)))))
 
 (deftest reload-loaded-test
   (is (= '["Unloading" a d c e b "Loading" b e c d a] (modify {:require '[a] :only :loaded})))
-  (is (= '["Unloading" f g a d c e b "Loading" b e c d a g f] (modify {:require '[a f] :only :loaded})))
-  (is (= '["Unloading" h f g a d c e b "Loading" b e c d a g f h] (modify {:require '[a f h] :only :loaded}))))
+  (is (= '["Unloading" f a d c g e b "Loading" b e g c d a f] (modify {:require '[a f] :only :loaded})))
+  (is (= '["Unloading" f a h d c g e b "Loading" b e g c d h a f] (modify {:require '[a f h] :only :loaded}))))
 
 (deftest reload-regexp-test
   (is (= '["Unloading" a "Loading" a i] (modify {:require '[a f] :only #"(a|i)"}))))
 
 (deftest reload-all-test
   (tu/with-deleted 'err-runtime
-    (is (= '["Loading" b double double e c d a g f h k j i l no-unload o n m split two-nses two-nses-second]
+    (is (= '["Loading" b double double e g k l no-unload o split two-nses two-nses-second c d h j n a f i m]
           (modify {:require '[] :only :all})))))
 
 (deftest reload-exception-test
@@ -167,9 +167,9 @@
   (tu/with-changed 'c "(ns c (:require e z))"
     (tu/touch 'e)
     (is (thrown? Exception (tu/reload)))
-    (is (= '["Unloading" a d c e "Loading" e d c "  failed to load" c] (tu/trace))))
+    (is (= '["Unloading" a d c e "Loading" e c "  failed to load" c] (tu/trace))))
   (tu/reload)
-  (is (= '["Unloading" c "Loading" c a] (tu/trace))))
+  (is (= '["Unloading" c "Loading" c d a] (tu/trace))))
 
 (deftest reload-ill-formed-test
   (tu/init 'a)
@@ -253,7 +253,7 @@
     (is (thrown-with-msg? Exception #"Cycle detected: e, h" (tu/reload)))
     (is (= '[] (tu/trace))))
   (tu/reload)
-  (is (= '["Unloading" h f a d c e "Loading" e c d a f h] (tu/trace))))
+  (is (= '["Unloading" f a h d c e "Loading" e c d h a f] (tu/trace))))
 
 (deftest hooks-test
   (is (= '["Unloading" m n "Loading" n m] (modify {:require '[o n m]} 'n)))
