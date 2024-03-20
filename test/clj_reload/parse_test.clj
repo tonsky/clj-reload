@@ -122,3 +122,57 @@ Unexpected :require form: [789 a b c]
 
       (is (= #{(io/file "fixtures/core_test/double.clj") (io/file "fixtures/core_test/double_b.clj")}
             (get-in nses ['double :ns-files]))))))
+
+(defn gen-graph [n]
+  (reduce
+   (fn [acc [k v]]
+     (assoc acc k #{v}))
+   {}
+   (partition 2 (interleave (range 0 n) (range 1 (inc n))))))
+
+; topo-sort-test will use the following dep graph.
+; Top ones require bottom ones.
+;
+;    a     f     i  l  m
+;  ╱ │ ╲ ╱   ╲   │     │
+; b  c  d  h  g  j     n
+;     ╲ │ ╱      │     │
+;       e        k     o
+
+(def test-graph
+  {:e #{:c :d :h}
+   :k #{:j}
+   :o #{:n}
+   :b #{:a}
+   :c #{:a}
+   :d #{:a :f}
+   :h #{}
+   :g #{:f}
+   :j #{:i}
+   :n #{:m}
+   :a #{}
+   :f #{}
+   :i #{}
+   :l #{}
+   :m #{}})
+
+(deftest topo-sort-test
+  (is (= [0 1 2 3 4 5 6 7 8 9]
+         (parse/topo-sort' (gen-graph 10))
+         (parse/topo-sort (gen-graph 10))))
+  ; while these functions have different orderings
+  ; the order of dependencies is still correct in this case.
+  (is (= [:b :e :c :d :a :g :f :h :k :j :i :l :o :n :m]
+         (parse/topo-sort test-graph)))
+  (is (= [:o :e :l :k :g :b :n :c :j :h :d :m :f :i :a]
+         (parse/topo-sort' test-graph))))
+
+(comment
+  ; to see performance differences on a simple graph where each node only has one edge..
+  (do
+    (time
+      (parse/topo-sort' (gen-graph 1000)))
+    (time
+      (parse/topo-sort (gen-graph 1000)))
+    nil)
+  )
