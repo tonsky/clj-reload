@@ -1,6 +1,7 @@
 # 0.4.3 - Mar 21, 2024
 
 - Do not report self-reference as a cycle #6
+- Parse record ctor syntax #7
 
 # 0.4.2 - Mar 20, 2024
 

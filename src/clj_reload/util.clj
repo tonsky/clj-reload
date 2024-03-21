@@ -31,7 +31,8 @@
       sym)))
 
 (defn read-form [reader]
-  (binding [*read-eval* false
+  (binding [*read-eval*       false
+            *suppress-read*   true
             *reader-resolver* dummy-resolver]
     (read reader-opts reader)))
 

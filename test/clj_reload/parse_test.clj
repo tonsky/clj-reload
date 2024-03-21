@@ -93,6 +93,16 @@ Unexpected :require form: [567 :as a]
 Unexpected :require form: [789 a b c]
 " (str out)))))
 
+(deftest reader-test
+  (is (= {} (read-str "#?(:clj 1 :cljs 2)")))
+  (is (= {} (read-str "{:a 1 #?@(:clj [:b 2] :cljs [:c 3])}")))
+  (is (= {} (read-str "#user.Y {:a 1}")))
+  (is (= {} (read-str "#x 1")))
+  (is (= {} (read-str "::kw")))
+  (is (= {} (read-str "::abc/kw")))
+  (is (= {} (read-str "java.io.File")))
+  (is (= {} (read-str "File"))))
+
 (deftest scan-impl-test
   (let [{files :files'
          nses  :namespaces'} (binding [util/*log-fn* nil]
