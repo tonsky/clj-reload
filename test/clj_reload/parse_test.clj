@@ -60,6 +60,23 @@
   (is (= '{x nil}
         (read-str "(in-ns 'x)"))))
 
+(deftest self-reference-test
+  (is (= '{x {:requires #{y z}}
+           y {:requires #{x z}}
+           z {:requires #{x y}}}
+        (read-str "(ns x (:require x y z))
+                   (ns y (:require x y z))
+                   (ns z (:require x y z))")))
+  (is (= '{x {:requires #{y z}}
+           y {:requires #{x z}}
+           z {:requires #{x y}}}
+        (read-str "(ns x)
+                   (require 'x 'y 'z)
+                   (ns y)
+                   (require 'x 'y 'z)
+                   (ns z)
+                   (require 'x 'y 'z)"))))
+
 (deftest read-file-errors-test
   (let [file "(ns x
                 (:require 123)

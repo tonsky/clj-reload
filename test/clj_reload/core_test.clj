@@ -226,8 +226,8 @@
 (deftest cycle-self-test
   (tu/init 'l)
   (tu/with-changed 'l "(ns l (:require l))"
-    (is (thrown-with-msg? Exception #"Cycle detected: l" (tu/reload)))
-    (is (= '[] (tu/trace))))
+    (tu/reload)
+    (is (= '["Unloading" l "Loading" l] (tu/trace))))
   (tu/reload)
   (is (= '["Unloading" l "Loading" l] (tu/trace))))
 

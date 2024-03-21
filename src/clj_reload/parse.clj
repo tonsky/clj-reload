@@ -86,7 +86,8 @@
          nses
          
          (= 'ns tag)
-         (let [[ns requires] (parse-ns-form form)]
+         (let [[ns requires] (parse-ns-form form)
+               requires      (disj requires ns)]
            (recur ns (update nses ns util/assoc-some
                        :meta     (meta ns)
                        :requires requires
@@ -101,7 +102,8 @@
          (throw (ex-info (str "Unexpected " tag " before ns definition in " file) {:form form}))
         
          (#{'require 'use} tag)
-         (let [requires' (parse-require-form (expand-quotes form))]
+         (let [requires' (parse-require-form (expand-quotes form))
+               requires' (disj requires' ns)]
            (recur ns (update-in nses [ns :requires] util/intos requires')))
         
          (or
