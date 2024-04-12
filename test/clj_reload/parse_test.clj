@@ -106,7 +106,7 @@ Unexpected :require form: [789 a b c]
 (deftest scan-impl-test
   (let [{files :files'
          nses  :namespaces'} (binding [util/*log-fn* nil]
-                               (@#'reload/scan-impl nil ["fixtures"] 0))]
+                               (@#'reload/scan-impl nil ["fixtures"] #".*\.cljc?" 0))]
     (testing "no-ns"
       (is (= '#{}
             (get-in files [(io/file "fixtures/core_test/no_ns.clj") :namespaces]))))
@@ -148,4 +148,13 @@ Unexpected :require form: [789 a b c]
             (get-in nses ['double :requires])))
 
       (is (= #{(io/file "fixtures/core_test/double.clj") (io/file "fixtures/core_test/double_b.clj")}
-            (get-in nses ['double :ns-files]))))))
+            (get-in nses ['double :ns-files]))))
+
+    (testing "custom-file-types"
+      (let [custom-file-type-re #".*\.(?:cljc?|repl)"
+            {files-custom :files'} (binding [util/*log-fn* nil]
+                                     (@#'reload/scan-impl nil ["fixtures"] custom-file-type-re 0))]
+        (is (nil?
+              (get-in files [(io/file "fixtures/core_test/custom_file_type.repl") :namespaces])))
+        (is (= '#{custom-file-type}
+              (get-in files-custom [(io/file "fixtures/core_test/custom_file_type.repl") :namespaces])))))))

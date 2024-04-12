@@ -255,6 +255,16 @@ To support that, `clj-reload`:
 
 In that case, you can just call `clj-reload.core/reload` and it should work with default settings.
 
+## Usage: Reloading custom file types
+
+If you have custom file types, like `.repl`, you can specify that `clj-reload` should scan and reload them too:
+
+```clojure
+(reload/init
+  {:dirs [...]
+   :extensions #".*\.(?:cljc?|repl)"})
+```
+
 ## Comparison: Evaluating buffer
 
 The simplest way to reload Clojure code is just re-evaluating an entire buffer.

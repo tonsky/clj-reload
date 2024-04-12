@@ -8,6 +8,7 @@
 ; State :: {// config
 ;           
 ;           :dirs        [<string> ...]       - where to look for files
+;           :extensions  <regex>              - which file extensions to scan, defaults to .*.cljc?
 ;           :no-unload   #{<symbol> ...}      - list of nses to skip unload
 ;           :no-reload   #{<symbol> ...}      - list of nses to skip reload
 ;           :reload-hook <symbol>             - if function with this name exists,
@@ -57,11 +58,11 @@
       (vswap! *res update name #(merge-with into % namespace)))
     @*res))
 
-(defn- scan-impl [files-before dirs since]
+(defn- scan-impl [files-before dirs extensions since]
   (let [files-now        (->> dirs
                            (mapcat #(file-seq (io/file %)))
                            (filter util/file?)
-                           (filter #(re-matches #".*\.cljc?" (util/file-name %))))
+                           (filter #(re-matches extensions (util/file-name %))))
 
         [files-modified
          files-broken]   (reduce
@@ -111,9 +112,11 @@
 
 (defn- init-impl [opts]
   (let [dirs (vec (:dirs opts))
+        extensions (or (:extensions opts) #".*\.cljc?")
         now  (util/now)
-        {:keys [files' namespaces']} (scan-impl nil dirs 0)]
+        {:keys [files' namespaces']} (scan-impl nil dirs extensions 0)]
     {:dirs        dirs
+     :extensions  extensions
      :no-unload   (set (:no-unload opts))
      :no-reload   (set (:no-reload opts))
      :reload-hook (:reload-hook opts 'after-ns-reload)
@@ -126,6 +129,7 @@
   "Options:
    
    :dirs        :: [<string> ...]  - where to look for files
+   :extensions  :: <regex>         - which file extensions to scan, defaults to .*.cljc?
    :no-reload   :: #{<symbol> ...} - list of namespaces to skip reload entirely
    :no-unload   :: #{<symbol> ...} - list of namespaces to skip unload only.
                                      These will be loaded “on top” of previous state
@@ -156,7 +160,7 @@
                 (:keep ns)))]))
 
 (defn- scan [state opts]
-  (let [{:keys [dirs since to-load to-unload no-unload no-reload files namespaces]} state
+  (let [{:keys [dirs extensions since to-load to-unload no-unload no-reload files namespaces]} state
         {:keys [only] :or {only :changed}} opts
         now              (util/now)
         loaded           @@#'clojure.core/*loaded-libs*
@@ -165,10 +169,10 @@
                 namespaces'
                 to-unload'
                 to-load']} (case only
-                             :changed (scan-impl files dirs since)
-                             :loaded  (scan-impl files dirs 0)
-                             :all     (scan-impl files dirs 0)
-                             #_regex  (-> (scan-impl files dirs 0)
+                             :changed (scan-impl files dirs extensions since)
+                             :loaded  (scan-impl files dirs extensions 0)
+                             :all     (scan-impl files dirs extensions 0)
+                             #_regex  (-> (scan-impl files dirs extensions 0)
                                         (update :to-unload' nses-match only)
                                         (update :to-load'   nses-match only)))
         
