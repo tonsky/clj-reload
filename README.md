@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.4.3"}
+io.github.tonsky/clj-reload {:mvn/version "0.5.0"}
 ```
 
 ## The problem
@@ -257,12 +257,12 @@ In that case, you can just call `clj-reload.core/reload` and it should work with
 
 ## Usage: Reloading custom file types
 
-If you have custom file types, like `.repl`, you can specify that `clj-reload` should scan and reload them too:
+If you have custom file types, like `*.repl`, you can specify that `clj-reload` should scan and reload them too:
 
 ```clojure
 (reload/init
-  {:dirs [...]
-   :extensions #".*\.(?:cljc?|repl)"})
+  {:dirs  [...]
+   :files #".*[.](clj|cljc|repl)"})
 ```
 
 ## Comparison: Evaluating buffer

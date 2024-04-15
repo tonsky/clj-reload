@@ -1,6 +1,7 @@
-# Next 
+# 0.5.0 - Apr 15, 2024
 
-- Added `:extensions` for custom file type extensions
+- Added `:files` option for custom file patterns #8 via @danieroux
+- Extracted `core/*config*` from `core/*state`
 
 # 0.4.3 - Mar 21, 2024
 
