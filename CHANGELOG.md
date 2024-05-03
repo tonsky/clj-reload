@@ -1,3 +1,7 @@
+# 0.6.0 - May 3, 2024
+
+- Disabled parallel init/reload via lock #9
+
 # 0.5.0 - Apr 15, 2024
 
 - Added `:files` option for custom file patterns #8 via @danieroux

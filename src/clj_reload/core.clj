@@ -3,7 +3,9 @@
     [clj-reload.keep :as keep]
     [clj-reload.parse :as parse]
     [clj-reload.util :as util]
-    [clojure.java.io :as io]))
+    [clojure.java.io :as io])
+  (:import
+    [java.util.concurrent.locks ReentrantLock]))
 
 ; Config :: {:dirs        [<string> ...]       - where to look for files
 ;            :files       #"<regex>"           - which files to scan, defaults to #".*\.cljc?"
@@ -46,6 +48,16 @@
 
 (def ^:private *state
   (atom {}))
+
+(def ^ReentrantLock lock
+  (ReentrantLock.))
+
+(defmacro with-lock [& body]
+  `(try
+     (.lock lock)
+     ~@body
+     (finally
+       (.unlock lock))))
 
 (defn- files->namespaces [files already-read]
   (let [*res (volatile! {})]
@@ -122,22 +134,23 @@
    :reload-hook :: <symbol>        - if function with this name exists in a namespace,
                                      it will be called after reloading. Default: 'after-ns-reload"
   [opts]
-  (binding [util/*log-fn* nil]
-    (let [dirs  (vec (:dirs opts))
-          files (or (:files opts) #".*\.cljc?")
-          now   (util/now)]
-      (alter-var-root #'*config*
-        (constantly
-          {:dirs        dirs
-           :files       files
-           :no-unload   (set (:no-unload opts))
-           :no-reload   (set (:no-reload opts))
-           :reload-hook (:reload-hook opts 'after-ns-reload)
-           :unload-hook (:unload-hook opts 'before-ns-unload)}))
-      (let [{:keys [files' namespaces']} (scan-impl nil 0)]
-        (reset! *state {:since       now
-                        :files       files'
-                        :namespaces  namespaces'})))))
+  (with-lock
+    (binding [util/*log-fn* nil]
+      (let [dirs  (vec (:dirs opts))
+            files (or (:files opts) #".*\.cljc?")
+            now   (util/now)]
+        (alter-var-root #'*config*
+          (constantly
+            {:dirs        dirs
+             :files       files
+             :no-unload   (set (:no-unload opts))
+             :no-reload   (set (:no-reload opts))
+             :reload-hook (:reload-hook opts 'after-ns-reload)
+             :unload-hook (:unload-hook opts 'before-ns-unload)}))
+        (let [{:keys [files' namespaces']} (scan-impl nil 0)]
+          (reset! *state {:since       now
+                          :files       files'
+                          :namespaces  namespaces'}))))))
 
 (defn- topo-sort-fn
   "Accepts dependees map {ns -> #{downsteram-ns ...}},
@@ -301,38 +314,39 @@
   ([]
    (reload nil))
   ([opts]
-   (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
-     (let [{:keys [unloaded]} (unload opts)]
-       (loop [loaded []]
-         (let [state @*state]
-           (if (not-empty (:to-load state))
-             (let [[ns & to-load'] (:to-load state)
-                   files (-> state :namespaces ns :ns-files)]
-               (if-some [ex (some #(ns-load ns % (-> state :namespaces ns :keep)) files)]
-                 (do
-                   (swap! *state update :to-unload #(cons ns %))
-                   (if (:throw opts true)
-                     (throw
-                       (ex-info
-                         (str "Failed to load namespace: " ns)
-                         {:unloaded  unloaded
-                          :loaded    loaded
-                          :failed    ns}
-                         ex))
-                     {:unloaded  unloaded
-                      :loaded    loaded
-                      :failed    ns
-                      :exception ex}))
-                 (do
-                   (swap! *state #(-> %
-                                    (assoc :to-load to-load')
-                                    (update-in [:namespaces ns] dissoc :keep)))
-                   (recur (conj loaded ns)))))
-             (do
-               (when (empty? loaded)
-                 (util/log "Nothing to reload"))
-               {:unloaded unloaded
-                :loaded   loaded}))))))))
+   (with-lock
+     (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
+       (let [{:keys [unloaded]} (unload opts)]
+         (loop [loaded []]
+           (let [state @*state]
+             (if (not-empty (:to-load state))
+               (let [[ns & to-load'] (:to-load state)
+                     files (-> state :namespaces ns :ns-files)]
+                 (if-some [ex (some #(ns-load ns % (-> state :namespaces ns :keep)) files)]
+                   (do
+                     (swap! *state update :to-unload #(cons ns %))
+                     (if (:throw opts true)
+                       (throw
+                         (ex-info
+                           (str "Failed to load namespace: " ns)
+                           {:unloaded  unloaded
+                            :loaded    loaded
+                            :failed    ns}
+                           ex))
+                       {:unloaded  unloaded
+                        :loaded    loaded
+                        :failed    ns
+                        :exception ex}))
+                   (do
+                     (swap! *state #(-> %
+                                      (assoc :to-load to-load')
+                                      (update-in [:namespaces ns] dissoc :keep)))
+                     (recur (conj loaded ns)))))
+               (do
+                 (when (empty? loaded)
+                   (util/log "Nothing to reload"))
+                 {:unloaded unloaded
+                  :loaded   loaded})))))))))
 
 (defmulti keep-methods
   (fn [tag]
