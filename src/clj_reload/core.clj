@@ -121,6 +121,15 @@
      :to-unload'  nses-unload
      :to-load'    nses-load}))
 
+(defn find-namespaces
+  ([]
+   (find-namespaces #".*"))
+  ([regex]
+   (binding [util/*log-fn* nil]
+     (let [{:keys [files]} @*state
+           {:keys [namespaces']} (scan-impl files 0)]
+       (into #{} (filter #(re-matches regex (name %)) (keys namespaces')))))))
+
 (defn init
   "Options:
    
@@ -160,8 +169,11 @@
     (fn [coll]
       (filter (set coll) sorted))))
 
-(defn nses-match [nses re]
-  (filter #(re-matches re (str %)) nses))
+(defn- add-unloaded [scan re loaded]
+  (let [new (->> (keys (:namespaces' scan))
+              (remove loaded)
+              (filter #(re-matches re (str %))))]
+    (update scan :to-load' into new)))
 
 (defn carry-keeps [from to]
   (util/for-map [[ns-sym ns] to]
@@ -184,9 +196,8 @@
                              :changed (scan-impl files since)
                              :loaded  (scan-impl files 0)
                              :all     (scan-impl files 0)
-                             #_regex  (-> (scan-impl files 0)
-                                        (update :to-unload' nses-match only)
-                                        (update :to-load'   nses-match only)))
+                             #_regex  (-> (scan-impl files since)
+                                        (add-unloaded only loaded)))
         
         _                (doseq [[ns {:keys [exception]}] broken
                                  :when (loaded ns)
@@ -216,7 +227,7 @@
                               :changed (loaded %)
                               :loaded  (loaded %)
                               :all     true
-                              #_regex  (re-matches only (str %)))
+                              #_regex  (or (loaded %) (re-matches only (str %))))
                             (not (:clj-reload/no-reload (:meta (namespaces %))))
                             (not (no-reload %))
                             (namespaces' %))

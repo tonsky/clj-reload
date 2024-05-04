@@ -1,10 +1,9 @@
 {:jvm-opts ["-Duser.language=en" "-Duser.country=US" "-Dfile.encoding=UTF-8"]
  :deps
- {org.clojure/clojure {:mvn/version "1.11.1"}}
+ {org.clojure/clojure {:mvn/version "1.11.3"}}
  :aliases
  {:dev
   {:jvm-opts ["-ea"]
    :extra-paths ["dev" "test" "fixtures/core_test" "fixtures/keep_test"]
    :extra-deps 
-   {org.clojure/tools.namespace {:mvn/version "1.5.0"}
-    io.github.tonsky/duti       {:git/sha "78bbf61953b9a685d02ff8cc63d04e4e8da81eb9"}}}}}
+   {org.clojure/tools.namespace {:mvn/version "1.5.0"}}}}}

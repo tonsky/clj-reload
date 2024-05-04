@@ -1,8 +1,10 @@
 (ns user
   (:require
+    [clojure.core.server :as server]
+    [clojure.java.io :as io]
+    [clojure.test :as test]
     [clojure.tools.namespace.repl :as ns]
-    [clojure.tools.namespace.track :as track]
-    [duti.core :as duti]))
+    [clojure.tools.namespace.track :as track]))
 
 (ns/disable-reload!)
 
@@ -22,17 +24,24 @@
 
 (defn -main [& args]
   (alter-var-root #'*command-line-args* (constantly args))
-  (let [{port "--port"} args]
-    (duti/start-socket-repl {:port (some-> port parse-long)})))
+  (let [{port "--port"} args
+        port (if (or (nil? port) (zero? port))
+               (+ 1024 (rand-int 64512))
+               (parse-long port))]
+    (println "Started Server Socket REPL on port" port)
+    (let [file (io/file ".repl-port")]
+      (spit file port)
+      (.deleteOnExit file))
+    (server/start-server
+      {:name          "repl"
+       :accept        'clojure.core.server/repl
+       :server-daemon false
+       :port          port})))
 
 (defn test-all []
   (reload)
-  (duti/test #"clj-reload\..*-test"))
+  (test/run-all-tests #"clj-reload\..*-test"))
 
 (defn -test-main [_]
-  (reload)
-  (duti/test-exit #"clj-reload\..*-test"))
-
-(comment
-  (reload)
-  (test-all))
+  (let [{:keys [fail error]} (test-all)]
+    (System/exit (+ fail error))))

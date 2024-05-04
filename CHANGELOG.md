@@ -1,3 +1,8 @@
+# 0.7.0 - May 4, 2024
+
+- [ BREAKING ] `:only` argument will force load unloaded namespaces, but will not reload unchanged ones
+- Added `find-namespaces`
+
 # 0.6.0 - May 3, 2024
 
 - Disabled parallel init/reload via lock #9

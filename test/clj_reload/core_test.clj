@@ -36,6 +36,11 @@
 ;     ╲ │ ╱      │     │
 ;       e        k     o
 
+(deftest find-namespaces-test
+  (is (= '#{a b c d double e err-runtime f g h i j k l m n no-reload no-unload o split two-nses two-nses-second} (reload/find-namespaces)))
+  (is (= '#{a b c d e f g h i j k l m n o} (reload/find-namespaces #"\w")))
+  (is (= '#{a b c} (reload/find-namespaces #"[abc]"))))
+
 (deftest reload-test
   (let [opts {:require '[b e c d h g a f k j i l]}]
     (is (= '["Unloading" a "Loading" a] (modify opts 'a)))
@@ -144,7 +149,13 @@
   (is (= '["Unloading" f a h d c g e b "Loading" b e g c d h a f] (modify {:require '[a f h] :only :loaded}))))
 
 (deftest reload-regexp-test
-  (is (= '["Unloading" a "Loading" a i] (modify {:require '[a f] :only #"(a|i)"}))))
+  (is (= '["Loading" i] (modify {:require '[a f] :only #"(a|i)"})))
+  (is (= '["Unloading" a "Loading" a i] (modify {:require '[a f] :only #"(a|i)"} 'a)))
+  (is (= '["Loading" i] (modify {:require '[a f] :only #"(a|i)"} 'i)))
+  (is (= '["Unloading" a "Loading" a i] (modify {:require '[a f] :only #"(a|i)"} 'a 'i)))
+  (is (= '["Unloading" f a d c e "Loading" e c d a f i] (modify {:require '[a f] :only #"(a|i)"} 'e)))
+  (is (= '["Loading" i] (modify {:require '[a f] :only #"(a|i)"} 'k)))
+  (is (= '["Unloading" k "Loading" k i] (modify {:require '[a f k] :only #"(a|i)"} 'k))))
 
 (deftest reload-all-test
   (tu/with-deleted 'err-runtime

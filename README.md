@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.6.0"}
+io.github.tonsky/clj-reload {:mvn/version "0.7.0"}
 ```
 
 ## The problem
@@ -140,7 +140,7 @@ If you pass regexp to `:only`, clj-reload will search for matching namespaces an
 (reload/reload {:only #".*\.-test"})
 ```
 
-This will find and load all namespaces, no matter if they were loaded before, that match this regexp.
+This will reload all changed namespaces, then find and load all unloaded namespaces that match the pattern.
 
 Finally, if you pass `:only :all` option to `reload`, it will reload all namespaces it can find in the specified `:dirs`, no matter whether loaded or changed.
 
@@ -263,6 +263,15 @@ If you have custom file types, like `*.repl`, you can specify that `clj-reload` 
 (reload/init
   {:dirs  [...]
    :files #".*[.](clj|cljc|repl)"})
+```
+
+## Usage: Finding namespaces
+
+Sometimes you just want to know what namespaces are there. Since `clj-reload` does this work already anyways, you can do it, too:
+
+```
+(reload/find-namespaces #".*-test")
+;; => #{lib.core-test lib.impl-test ...}
 ```
 
 ## Comparison: Evaluating buffer
