@@ -1,3 +1,8 @@
+# 0.7.1 - June 11, 2024
+
+- Omitting `:dirs` will use system classpath
+- Add `clj-reload.core/classpath-dirs`
+
 # 0.7.0 - May 4, 2024
 
 - [ BREAKING ] `:only` argument will force load unloaded namespaces, but will not reload unchanged ones

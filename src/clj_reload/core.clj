@@ -122,6 +122,7 @@
      :to-load'    nses-load}))
 
 (defn find-namespaces
+  "Returns namespaces matching regex, or all of them"
   ([]
    (find-namespaces #".*"))
   ([regex]
@@ -129,6 +130,11 @@
      (let [{:keys [files]} @*state
            {:keys [namespaces']} (scan-impl files 0)]
        (into #{} (filter #(re-matches regex (name %)) (keys namespaces')))))))
+
+(def ^{:doc "Returns dirs that are currently on classpath"
+       :arglists '([])}
+  classpath-dirs
+  util/classpath-dirs)
 
 (defn init
   "Options:
@@ -145,7 +151,7 @@
   [opts]
   (with-lock
     (binding [util/*log-fn* nil]
-      (let [dirs  (vec (:dirs opts))
+      (let [dirs  (vec (or (:dirs opts) (classpath-dirs)))
             files (or (:files opts) #".*\.cljc?")
             now   (util/now)]
         (alter-var-root #'*config*
@@ -394,4 +400,4 @@
 ;; See https://github.com/tonsky/clj-reload/pull/4
 ;; and https://github.com/clojure-emacs/cider-nrepl/issues/849
 (init
-  {:dirs (util/classpath-dirs)})
+  {:dirs (classpath-dirs)})

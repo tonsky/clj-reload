@@ -1,9 +1,8 @@
-{:jvm-opts ["-Duser.language=en" "-Duser.country=US" "-Dfile.encoding=UTF-8"]
- :deps
+{:deps
  {org.clojure/clojure {:mvn/version "1.11.3"}}
  :aliases
  {:dev
-  {:jvm-opts ["-ea"]
+  {:jvm-opts ["-ea" "-Duser.language=en" "-Duser.country=US" "-Dfile.encoding=UTF-8"]
    :extra-paths ["dev" "test" "fixtures/core_test" "fixtures/keep_test"]
    :extra-deps 
    {org.clojure/tools.namespace {:mvn/version "1.5.0"}}}}}
