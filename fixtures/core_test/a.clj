@@ -5,4 +5,6 @@
     d
     [z :as-alias z])
   (:import
-    [java.io File]))
+   [java.io File]))
+
+(def a nil)

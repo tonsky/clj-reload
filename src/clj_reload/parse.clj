@@ -2,7 +2,8 @@
   (:require
     [clj-reload.util :as util]
     [clojure.string :as str]
-    [clojure.walk :as walk])
+    [clojure.walk :as walk]
+    [clojure.java.io :as io])
   (:import
     [java.io File]))
 
@@ -70,56 +71,67 @@
   "Returns {<symbol> NS} or Exception"
   ([file]
    (with-open [rdr (util/file-reader file)]
-     (try
-       (read-file rdr file)
-       (catch Exception e
-         (util/log "Failed to read" (.getPath ^File file) (.getMessage e))
-         (ex-info (str "Failed to read" (.getPath ^File file)) {:file file} e)))))
+     (read-file rdr file)))
   ([rdr file]
-   (loop [ns   nil
-          nses {}]
-     (let [form (util/read-form rdr)
-           tag  (when (list? form)
-                  (first form))]
-       (cond
-         (= :clj-reload.util/eof form)
-         nses
-         
-         (= 'ns tag)
-         (let [[ns requires] (parse-ns-form form)
-               requires      (disj requires ns)]
-           (recur ns (update nses ns util/assoc-some
-                       :meta     (meta ns)
-                       :requires requires
-                       :ns-files (util/some-set file))))
-          
-         (= 'in-ns tag)
-         (let [[_ ns] (expand-quotes form)]
-           (recur ns (update nses ns util/assoc-some 
-                       :in-ns-files (util/some-set file))))
-        
-         (and (nil? ns) (#{'require 'use} tag))
-         (throw (ex-info (str "Unexpected " tag " before ns definition in " file) {:form form}))
-        
-         (#{'require 'use} tag)
-         (let [requires' (parse-require-form (expand-quotes form))
-               requires' (disj requires' ns)]
-           (recur ns (update-in nses [ns :requires] util/intos requires')))
-        
-         (or
+   (try
+     (loop [ns   nil
+           nses {}]
+      (let [form (util/read-form rdr)
+            tag  (when (list? form)
+                   (first form))]
+        (cond
+          (= :clj-reload.util/eof form)
+          nses
+
+          (= 'ns tag)
+          (let [[ns requires] (parse-ns-form form)
+                requires      (disj requires ns)]
+            (recur ns (update nses ns util/assoc-some
+                              :meta     (meta ns)
+                              :requires requires
+                              :ns-files (util/some-set file))))
+
+          (= 'in-ns tag)
+          (let [[_ ns] (expand-quotes form)]
+            (recur ns (update nses ns util/assoc-some
+                              :in-ns-files (util/some-set file))))
+
+          (and (nil? ns) (#{'require 'use} tag))
+          (throw (ex-info (str "Unexpected " tag " before ns definition in " file) {:form form}))
+
+          (#{'require 'use} tag)
+          (let [requires' (parse-require-form (expand-quotes form))
+                requires' (disj requires' ns)]
+            (recur ns (update-in nses [ns :requires] util/intos requires')))
+
+          (or
            (= 'defonce tag)
            (:clj-reload/keep (meta form))
            (and
-             (list? form)
-             (:clj-reload/keep (meta (second form)))))
-         (let [[_ name] form]
-           (recur ns (assoc-in nses [ns :keep name] {:tag  tag
-                                                     :form form})))
-        
-         :else
-         (recur ns nses))))))
+            (list? form)
+            (:clj-reload/keep (meta (second form)))))
+          (let [[_ name] form]
+            (recur ns (assoc-in nses [ns :keep name] {:tag  tag
+                                                      :form form})))
 
-(defn dependees 
+          :else
+          (recur ns nses))))
+     (catch Exception e
+         (util/log "Failed to read" (.getPath file) (.getMessage e))
+         (ex-info (str "Failed to read" (.getPath file)) {:file file} e)))))
+
+(defn read-resource
+
+  "Like read-file but will read any resource from res-path.
+  Returns the same as `read-file`."
+
+  [res-path]
+
+  (if-let [f-url (io/resource res-path)]
+    (let [rdr (util/string-reader (slurp (io/reader f-url)))]
+      (read-file rdr f-url))))
+
+(defn dependees
   "Inverts the requies graph. Returns {ns -> #{downstream-ns ...}}"
   [namespaces]
   (let [*m (volatile! (transient {}))]
@@ -129,6 +141,16 @@
               :when (namespaces to)]
         (vswap! *m util/update! to util/conjs from)))
     (persistent! @*m)))
+
+(defn deep-dependees-set
+  "Given a set of some initial namespaces and a dependees map like the one
+  calculated by `dependees`, return a set off all trasitively reached namespaces
+  including those on the initial set (initial-nss)."
+  [initial-nss ns-dependees]
+  (->> initial-nss
+       (mapcat (fn [ns]
+                 (deep-dependees-set (get ns-dependees ns) ns-dependees) ))
+       (reduce conj initial-nss)))
 
 (defn transitive-closure
   "Starts from starts, expands using dependees {ns -> #{downsteram-ns ...}},
