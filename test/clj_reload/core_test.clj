@@ -59,6 +59,28 @@
     (is (= '["Unloading" i f a j h d c l k e "Loading" e k l c d h j a f i] (modify opts 'e 'k 'l)))
     (is (= '["Unloading" i f a j h d c l k g e b "Loading" b e g k l c d h j a f i] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
 
+(deftest reload-all-regex-test
+  (let [*reloads (atom [])]
+    (apply tu/init '[b e c d h g a f k j i l])
+    (binding [util/*log-fn* (fn [& [x :as log-line]]
+                              (when (#{"Loading" "Unloading" } x)
+                                (swap! *reloads conj log-line)))]
+      (reload/reload-all #"^e$")
+      (is (= '[("Unloading" f)
+               ("Unloading" a)
+               ("Unloading" h)
+               ("Unloading" d)
+               ("Unloading" c)
+               ("Unloading" e)
+               ("Loading" e)
+               ("Loading" c)
+               ("Loading" d)
+               ("Loading" h)
+               ("Loading" a)
+               ("Loading" f)]
+
+             @*reloads)))))
+
 (deftest return-value-ok-test
   (tu/init 'a 'f 'h)
   (is (= {:unloaded '[]

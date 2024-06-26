@@ -118,10 +118,10 @@
   (LineNumberingPushbackReader.
     (StringReader. s)))
 
-(defn ns-load-file [content ns ^File file]
-  (let [[_ ext] (re-matches #".*\.([^.]+)" (.getName file))
+(defn ns-load-file [content ns file-name]
+  (let [[_ ext] (re-matches #".*\.([^.]+)" file-name)
         path    (-> ns str (str/replace #"\-" "_") (str/replace #"\." "/") (str "." ext))]
-    (Compiler/load (StringReader. content) path (.getName file))))
+    (Compiler/load (StringReader. content) path file-name)))
 
 (defn loader-classpath []
   (->> (clojure.lang.RT/baseLoader)

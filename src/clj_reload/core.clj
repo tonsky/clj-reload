@@ -5,7 +5,9 @@
     [clj-reload.util :as util]
     [clojure.java.io :as io])
   (:import
-    [java.util.concurrent.locks ReentrantLock]))
+   [java.util.concurrent.locks ReentrantLock]
+   [java.io File]
+   [java.net URL]))
 
 ; Config :: {:dirs        [<string> ...]       - where to look for files
 ;            :files       #"<regex>"           - which files to scan, defaults to #".*\.cljc?"
@@ -268,17 +270,23 @@
   (dosync
     (alter @#'clojure.core/*loaded-libs* disj ns)))
 
-(defn- ns-load [ns file keeps]
+(defn- ns-load [ns file-or-url keeps]
   (util/log "Loading" ns #_"from" #_(util/file-path file))
   (try
     (if (empty? keeps)
-      (util/ns-load-file (slurp file) ns file)
-      (keep/ns-load-patched ns file keeps))
-    
+      (util/ns-load-file (slurp file-or-url) ns (if (instance? java.io.File file-or-url)
+                                                  (.getName ^File file-or-url)
+                                                  (.getFile ^URL  file-or-url)))
+      (if (instance? java.io.File file-or-url)
+        (keep/ns-load-patched ns file-or-url keeps)
+        (throw (ex-info "Can only use keeps with java.io.File" {:ns ns
+                                                                :file-or-url file-or-url
+                                                                :keeps keeps}))))
+
     (when-some [reload-hook (:reload-hook *config*)]
       (when-some [reload-fn (ns-resolve (find-ns ns) reload-hook)]
         (reload-fn)))
-    
+
     nil
     (catch Throwable t
       (util/log "  failed to load" ns t)
@@ -364,6 +372,57 @@
                    (util/log "Nothing to reload"))
                  {:unloaded unloaded
                   :loaded   loaded})))))))))
+
+(defn reload-all
+
+  "Reload all loaded namespaces that contains at least one var, which matches
+  regex, and any other namespaces depending on them."
+
+  [regex]
+
+  (let [{:keys [no-unload no-reload]} *config*
+        ;; collect all loaded namespaces resources files paths set
+        all-paths (->> (all-ns)
+                       (reduce (fn [files ns]
+                                 (reduce (fn [files' ns-var]
+                                           (if-let [f-path (some-> ns-var meta :file)]
+                                             (conj files' f-path)
+                                             files'))
+                                         files
+                                         (vals (ns-interns ns))))
+                               #{}))
+
+        ;; build the namespaces map
+        namespaces (reduce (fn [nss path]
+                             (let [res (parse/read-resource path)]
+                               ;; throwables here are caused for example by reading
+                               ;; files which contains "#{`ns 'ns}". This is because
+                               ;; of reading with clj-reload.util/dummy-resolver
+                               (if-not (util/throwable? res)
+                                 (merge nss res)
+                                 nss)))
+                           {}
+                           all-paths)
+        reload?          #(and
+                           (not (:clj-reload/no-unload (:meta (namespaces %))))
+                           (not (:clj-reload/no-reload (:meta (namespaces %))))
+                           (not (no-unload %))
+                           (not (no-reload %)))
+        dependees  (parse/dependees namespaces)
+        topo-sort  (topo-sort-fn dependees)
+        matched-ns (->> (keys namespaces)
+                        (filterv (fn [ns] (re-matches regex (name ns))))
+                        (into #{}))
+        to-reload   (->> (parse/deep-dependees-set matched-ns dependees)
+                         topo-sort)
+        to-unload (reverse to-reload)]
+
+    (doseq [ns to-unload]
+      (ns-unload ns))
+
+    (doseq [ns to-reload]
+      (doseq [ns-files (get-in namespaces [ns :ns-files])]
+        (ns-load ns ns-files {})))))
 
 (defmulti keep-methods
   (fn [tag]
