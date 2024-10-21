@@ -336,6 +336,14 @@ This is how `clj-reload` is different:
 
 - `clj-reload` doesn’t support ClojureScript. Patches welcome.
 
+## A word of caution
+
+Clj-reload works by removing whole namespaces. Everything in them including vars is gone. This is different from how Clojure REPL usually works, in which calling `def` twice will just override its _value_, keeping the var itself the same.
+
+So if you store a link to a var somewhere, it’ll be pointing to the old version after reload. If you required/aliased a namespace, it’ll be pointing to the old version after reload.
+
+For your code to see new changes, use `(resolve 'full.ns/sym)` instead of just `full.ns/sym` or even `@#'full.ns/sym`, and do not put namespaces you’ll be reloading in `:require` portion of your REPL namespace.
+
 ## ClojureScript?
 
 `clj-reload` doesn’t support ClojureScript. Patches are welcome.
