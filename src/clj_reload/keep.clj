@@ -175,15 +175,15 @@
         (keep-patch ns sym keep)))))
 
 (defn ns-load-patched [ns ^File file keeps]
-  (try    
+  (try
     (let [content (patch-file (slurp file) (patch-fn ns keeps))]
-      (util/ns-load-file content ns file))
-    
-    ;; check 
+      (util/ns-load-file content ns (.getName file)))
+
+    ;; check
     (@#'clojure.core/throw-if (not (find-ns ns))
       "namespace '%s' not found after loading '%s'"
       ns (.getPath file))
-      
+
     (finally
       ;; drop everything in stash
       (remove-ns 'clj-reload.stash)
