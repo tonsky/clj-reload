@@ -1,11 +1,11 @@
 (ns clj-reload.core
   (:require
-    [clj-reload.keep :as keep]
-    [clj-reload.parse :as parse]
-    [clj-reload.util :as util]
-    [clojure.java.io :as io])
+   [clj-reload.keep :as keep]
+   [clj-reload.parse :as parse]
+   [clj-reload.util :as util]
+   [clojure.java.io :as io])
   (:import
-    [java.util.concurrent.locks ReentrantLock]))
+   [java.util.concurrent.locks ReentrantLock]))
 
 ; Config :: {:dirs        [<string> ...]       - where to look for files
 ;            :files       #"<regex>"           - which files to scan, defaults to #".*\.cljc?"
@@ -399,5 +399,8 @@
 ;; Initialize with classpath-dirs to support “init-less” workflow
 ;; See https://github.com/tonsky/clj-reload/pull/4
 ;; and https://github.com/clojure-emacs/cider-nrepl/issues/849
-(init
-  {:dirs (classpath-dirs)})
+(when (and
+        (not= "false" (System/getenv "CLJ_RELOAD_AUTO_INIT"))
+        (not= "false" (System/getProperty "clj-reload.auto-init")))
+  (init
+    {:dirs (classpath-dirs)}))

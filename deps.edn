@@ -1,5 +1,5 @@
 {:deps
- {org.clojure/clojure {:mvn/version "1.11.3"}}
+ {org.clojure/clojure {:mvn/version "1.12.0"}}
  :aliases
  {:dev
   {:jvm-opts ["-ea" "-Duser.language=en" "-Duser.country=US" "-Dfile.encoding=UTF-8"]

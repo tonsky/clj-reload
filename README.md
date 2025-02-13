@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.7.1"}
+io.github.tonsky/clj-reload {:mvn/version "0.8.0"}
 ```
 
 ## The problem
@@ -248,12 +248,24 @@ To support that, `clj-reload`:
 - Lets you skip `init`, in which case it’ll initialize with every directory it can find on classpath,
 - Supports `:clj-reload/no-reload` and `:clj-reload/no-unload` meta on namespace symbol, like this:
 
-```
+```clojure
 (ns ^:clj-reload/no-reload no-reload
   (:require ...))
 ```
 
 In that case, you can just call `clj-reload.core/reload` and it should work with default settings.
+
+To disable initial `init`, set environment variable:
+
+```sh
+CLJ_RELOAD_AUTO_INIT=false clj -M -m ...
+```
+
+or system property:
+
+```sh
+clj -J-Dclj-reload.auto-init=false -M -m ...
+```
 
 ## Usage: Reloading custom file types
 
@@ -269,7 +281,7 @@ If you have custom file types, like `*.repl`, you can specify that `clj-reload` 
 
 Sometimes you just want to know what namespaces are there. Since `clj-reload` does this work already anyways, you can do it, too:
 
-```
+```clojure
 (reload/find-namespaces #".*-test")
 ;; => #{lib.core-test lib.impl-test ...}
 ```

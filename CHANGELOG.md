@@ -1,3 +1,7 @@
+# 0.8.0 - Feb 13, 2025
+
+- Add `CLJ_RELOAD_AUTO_INIT` env variable and `clj-reload.auto-init` system property to optionally disable init-less workflow #16
+
 # 0.7.1 - June 11, 2024
 
 - Omitting `:dirs` will use system classpath
