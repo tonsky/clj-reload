@@ -20,11 +20,12 @@
 
 (def ^:private ^:dynamic *config*)
 
-; State :: {:since       <long>               - last time list of files was scanned
-;           :files       {<file> -> File}     - all found files
-;           :namespaces  {<symbol> -> NS}     - all found namespaces
-;           :to-unload   #{<symbol> ...}      - list of nses pending unload
-;           :to-load     #{<symbol> ...}}     - list of nses pending load
+; State :: {:since       <long>                 - last time list of files was scanned
+;           :files       {<file> -> File}       - all found files
+;           :namespaces  {<symbol> -> NS}       - all found namespaces
+;           :read-files  {<file> -> Namespaces} - namespaces by file
+;           :to-unload   #{<symbol> ...}        - list of nses pending unload
+;           :to-load     #{<symbol> ...}}       - list of nses pending load
 ;
 ; File ::  {:namespaces #{<symbol> ...}       - nses defined in this file
 ;           :modified   <modified>}           - lastModified
@@ -59,17 +60,15 @@
      (finally
        (.unlock lock))))
 
-(defn- files->namespaces [files already-read]
+(defn- files->namespaces [read-files]
   (let [*res (volatile! {})]
-    (doseq [file files
-            [name namespace] (or
-                               (already-read file)
-                               (parse/read-file file))
-            :when (not (util/throwable? namespace))]
-      (vswap! *res update name #(merge-with into % namespace)))
+    (doseq [[_ namespaces] read-files
+            [name ns] namespaces
+            :when (not (util/throwable? ns))]
+      (vswap! *res update name #(merge-with into % ns)))
     @*res))
 
-(defn- scan-impl [files-before since]
+(defn- scan-impl [read-files files-before since]
   (let [files-now        (->> (:dirs *config*)
                            (mapcat #(file-seq (io/file %)))
                            (filter util/file?)
@@ -112,12 +111,16 @@
                            files-modified
                            (util/for-map [[file _] files-broken]
                              [file {}]))
+
+        new-read-files   (-> (reduce dissoc read-files files-deleted)
+                             (merge already-read))
         
-        nses'            (files->namespaces (keys files') already-read)] ;; TODO don't parse second time
-                           
+        nses'            (files->namespaces new-read-files)]
+
     {:broken      nses-broken
      :files'      files'
      :namespaces' nses'
+     :read-files' new-read-files
      :to-unload'  nses-unload
      :to-load'    nses-load}))
 
@@ -128,7 +131,7 @@
   ([regex]
    (binding [util/*log-fn* nil]
      (let [{:keys [files]} @*state
-           {:keys [namespaces']} (scan-impl files 0)]
+           {:keys [namespaces']} (scan-impl {} files 0)]
        (into #{} (filter #(re-matches regex (name %)) (keys namespaces')))))))
 
 (def ^{:doc "Returns dirs that are currently on classpath"
@@ -162,10 +165,11 @@
              :no-reload   (set (:no-reload opts))
              :reload-hook (:reload-hook opts 'after-ns-reload)
              :unload-hook (:unload-hook opts 'before-ns-unload)}))
-        (let [{:keys [files' namespaces']} (scan-impl nil 0)]
+        (let [{:keys [files' namespaces' read-files']} (scan-impl {} nil 0)]
           (reset! *state {:since       now
                           :files       files'
-                          :namespaces  namespaces'}))))))
+                          :namespaces  namespaces'
+                          :read-files  read-files'}))))))
 
 (defn- topo-sort-fn
   "Accepts dependees map {ns -> #{downsteram-ns ...}},
@@ -190,7 +194,7 @@
 
 (defn- scan [state opts]
   (let [{:keys [no-unload no-reload]} *config*
-        {:keys [since to-load to-unload files namespaces]} state
+        {:keys [since to-load to-unload files namespaces read-files]} state
         {:keys [only] :or {only :changed}} opts
         now              (util/now)
         loaded           @@#'clojure.core/*loaded-libs*
@@ -198,11 +202,12 @@
                 files'
                 namespaces'
                 to-unload'
+                read-files'
                 to-load']} (case only
-                             :changed (scan-impl files since)
-                             :loaded  (scan-impl files 0)
-                             :all     (scan-impl files 0)
-                             #_regex  (-> (scan-impl files since)
+                             :changed (scan-impl read-files files since)
+                             :loaded  (scan-impl {} files 0)
+                             :all     (scan-impl {} files 0)
+                             #_regex  (-> (scan-impl read-files files since)
                                         (add-unloaded only loaded)))
         
         _                (doseq [[ns {:keys [exception]}] broken
@@ -249,6 +254,7 @@
       :since      since'
       :files      files'
       :namespaces (carry-keeps namespaces namespaces')
+      :read-files read-files'
       :to-unload  to-unload''
       :to-load    to-load'')))
 

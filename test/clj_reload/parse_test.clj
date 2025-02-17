@@ -108,7 +108,7 @@ Unexpected :require form: [789 a b c]
          nses  :namespaces'} (binding [reload/*config* {:dirs ["fixtures"]
                                                         :files #".*\.cljc?"}
                                        util/*log-fn*  nil]
-                               (@#'reload/scan-impl nil 0))]
+                               (@#'reload/scan-impl {} nil 0))]
     (testing "no-ns"
       (is (= '#{}
             (get-in files [(io/file "fixtures/core_test/no_ns.clj") :namespaces]))))
@@ -156,7 +156,7 @@ Unexpected :require form: [789 a b c]
       (let [{files-custom :files'} (binding [reload/*config* {:dirs  ["fixtures"]
                                                               :files #".*\.(?:cljc?|repl)"}
                                              util/*log-fn* nil]
-                                     (@#'reload/scan-impl nil 0))]
+                                     (@#'reload/scan-impl {} nil 0))]
         (is (nil?
               (get-in files [(io/file "fixtures/core_test/custom_file_type.repl") :namespaces])))
         (is (= '#{custom-file-type}
