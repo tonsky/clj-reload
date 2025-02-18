@@ -14,9 +14,14 @@
 ;            :reload-hook <symbol>             - if function with this name exists,
 ;                                                it will be called after reloading.
 ;                                                default: after-ns-reload
-;            :unload-hook <symbol>}            - if function with this name exists,
+;            :unload-hook <symbol>             - if function with this name exists,
 ;                                                it will be called before unloading.
 ;                                                default: before-ns-unload
+;            :output      <keyword>}           - verbosity of log output. Options:
+;                                                :verbose - print Unloading/Reloading for each namespace
+;                                                :quieter - only print 'Reloaded N namespaces'
+;                                                :quiet - no output at all
+;                                                default: :verbose
 
 (def ^:private ^:dynamic *config*)
 
@@ -149,7 +154,12 @@
    :unload-hook :: <symbol>        - if function with this name exists in a namespace,
                                      it will be called before unloading. Default: 'before-ns-unload
    :reload-hook :: <symbol>        - if function with this name exists in a namespace,
-                                     it will be called after reloading. Default: 'after-ns-reload"
+                                     it will be called after reloading. Default: 'after-ns-reload
+   :output      :: <keyword>       - verbosity of log output. Options:
+                                     :verbose - print Unloading/Reloading for each namespace
+                                     :quieter - only print 'Reloaded N namespaces'
+                                     :quiet - no output at all
+                                     Default: :verbose"
   [opts]
   (with-lock
     (binding [util/*log-fn* nil]
@@ -163,7 +173,8 @@
              :no-unload   (set (:no-unload opts))
              :no-reload   (set (:no-reload opts))
              :reload-hook (:reload-hook opts 'after-ns-reload)
-             :unload-hook (:unload-hook opts 'before-ns-unload)}))
+             :unload-hook (:unload-hook opts 'before-ns-unload)
+             :output      (:output opts :verbose)}))
         (let [{:keys [files' namespaces']} (scan-impl nil 0)]
           (reset! *state {:since       now
                           :files       files'
@@ -255,7 +266,8 @@
       :to-load    to-load'')))
 
 (defn- ns-unload [ns]
-  (util/log "Unloading" ns)
+  (when (= (:output *config*) :verbose)
+    (util/log "Unloading" ns))
   (try
     (when-some [unload-hook (:unload-hook *config*)]
       (when-some [ns-obj (find-ns ns)]
@@ -271,7 +283,8 @@
     (alter @#'clojure.core/*loaded-libs* disj ns)))
 
 (defn- ns-load [ns file keeps]
-  (util/log "Loading" ns #_"from" #_(util/file-path file))
+  (when (= (:output *config*) :verbose)
+    (util/log "Loading" ns #_"from" #_(util/file-path file)))
   (try
     (if (empty? keeps)
       (util/ns-load-file (slurp file) ns file)
@@ -305,7 +318,9 @@
                   (update :namespaces update ns update :keep util/deep-merge keeps)))
              (recur (conj unloaded ns)))
            (do
-             (when (empty? unloaded)
+             (when (and
+                     (= (:output *config*) :verbose)
+                     (empty? unloaded))
                (util/log "Nothing to unload"))
              {:unloaded unloaded})))))))
 
@@ -362,8 +377,12 @@
                                       (update-in [:namespaces ns] dissoc :keep)))
                      (recur (conj loaded ns)))))
                (do
-                 (when (empty? loaded)
+                 (when (and
+                         (= (:output *config*) :verbose)
+                         (empty? loaded))
                    (util/log "Nothing to reload"))
+                 (when (= (:output *config*) :quieter)
+                   (util/log (format "Reloaded %s namespaces" (count loaded))))
                  {:unloaded unloaded
                   :loaded   loaded})))))))))
 
