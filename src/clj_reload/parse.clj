@@ -74,7 +74,7 @@
        (read-file rdr file)
        (catch Exception e
          (util/log "Failed to read" (.getPath ^File file) (.getMessage e))
-         (ex-info (str "Failed to read" (.getPath ^File file)) {:file file} e)))))
+         (ex-info (str "Failed to read " (.getPath ^File file)) {:file file} e)))))
   ([rdr file]
    (loop [ns   nil
           nses {}]

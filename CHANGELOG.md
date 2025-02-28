@@ -1,3 +1,7 @@
+# WIP
+
+- Don't re-parse files that didn't change on disk #18
+
 # 0.8.0 - Feb 13, 2025
 
 - Add `CLJ_RELOAD_AUTO_INIT` env variable and `clj-reload.auto-init` system property to optionally disable init-less workflow #16

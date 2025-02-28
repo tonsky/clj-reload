@@ -69,7 +69,8 @@
       (vswap! *res update name #(merge-with into % namespace)))
     @*res))
 
-(defn- scan-impl [files-before since]
+(defn- scan-impl [{files-before :files
+                   nses-before  :namespaces} since]
   (let [files-now        (->> (:dirs *config*)
                            (mapcat #(file-seq (io/file %)))
                            (filter util/file?)
@@ -109,11 +110,13 @@
                                       :modified   (util/last-modified file)}])))
         
         already-read     (merge
+                           (util/for-map [[file {:keys [namespaces]}] files-before]
+                             [file (select-keys nses-before namespaces)])
                            files-modified
                            (util/for-map [[file _] files-broken]
                              [file {}]))
         
-        nses'            (files->namespaces (keys files') already-read)] ;; TODO don't parse second time
+        nses'            (files->namespaces (keys files') already-read)]
                            
     {:broken      nses-broken
      :files'      files'
@@ -127,8 +130,7 @@
    (find-namespaces #".*"))
   ([regex]
    (binding [util/*log-fn* nil]
-     (let [{:keys [files]} @*state
-           {:keys [namespaces']} (scan-impl files 0)]
+     (let [{:keys [namespaces']} (scan-impl @*state 0)]
        (into #{} (filter #(re-matches regex (name %)) (keys namespaces')))))))
 
 (def ^{:doc "Returns dirs that are currently on classpath"
@@ -199,10 +201,10 @@
                 namespaces'
                 to-unload'
                 to-load']} (case only
-                             :changed (scan-impl files since)
-                             :loaded  (scan-impl files 0)
-                             :all     (scan-impl files 0)
-                             #_regex  (-> (scan-impl files since)
+                             :changed (scan-impl state since)
+                             :loaded  (scan-impl state 0)
+                             :all     (scan-impl state 0)
+                             #_regex  (-> (scan-impl state since)
                                         (add-unloaded only loaded)))
         
         _                (doseq [[ns {:keys [exception]}] broken

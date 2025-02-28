@@ -1,10 +1,12 @@
 (ns clj-reload.core-test
   (:require
-    [clj-reload.core :as reload]
-    [clj-reload.test-util :as tu]
-    [clj-reload.util :as util]
-    [clojure.string :as str]
-    [clojure.test :refer [is are deftest testing use-fixtures]]))
+   [clj-reload.core :as reload]
+   [clj-reload.parse :as parse]
+   [clj-reload.test-util :as tu]
+   [clj-reload.util :as util]
+   [clojure.java.io :as io]
+   [clojure.string :as str]
+   [clojure.test :refer [is are deftest testing use-fixtures]]))
 
 (defn reset []
   (tu/reset '[two-nses-second two-nses split o n no-unload m l i j k f a g h d c e double b]))
@@ -58,6 +60,25 @@
     (is (= '["Unloading" a c b "Loading" b c a] (modify opts 'a 'b 'c)))
     (is (= '["Unloading" i f a j h d c l k e "Loading" e k l c d h j a f i] (modify opts 'e 'k 'l)))
     (is (= '["Unloading" i f a j h d c l k g e b "Loading" b e g k l c d h j a f i] (modify opts 'a 'b 'c 'd 'e 'f 'g 'h 'i 'j 'k 'l)))))
+
+(deftest parse-cache-test
+  (let [*parsed   (atom #{})
+        read-file parse/read-file
+        opts      {:require '[b e c d h g a f k j i l]}]
+    (reset)
+    (util/doeach require (:require opts))
+    (tu/init opts)
+    (util/doeach tu/touch '[e])
+    (with-redefs [parse/read-file (fn
+                                    ([file]
+                                     (swap! *parsed conj file)
+                                     (read-file file))
+                                    ([rdr file]
+                                     (swap! *parsed conj file)
+                                     (read-file rdr file)))]
+      (tu/reload opts)
+      (is (= '["Unloading" f a h d c e "Loading" e c d h a f] (tu/trace)))
+      (is (= #{(io/file "fixtures/core_test/e.clj")} @*parsed)))))
 
 (deftest return-value-ok-test
   (tu/init 'a 'f 'h)
