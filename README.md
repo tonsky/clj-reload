@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.8.0"}
+io.github.tonsky/clj-reload {:mvn/version "0.9.0"}
 ```
 
 ## The problem
@@ -284,6 +284,38 @@ Sometimes you just want to know what namespaces are there. Since `clj-reload` do
 ```clojure
 (reload/find-namespaces #".*-test")
 ;; => #{lib.core-test lib.impl-test ...}
+```
+
+## Usage: Controlling output
+
+In init, you can set how much `clj-reload` will log during reload. Verbose (default):
+
+```
+=> (reload/init {:output :verbose})
+=> (reload/reload)
+
+Unloading clojure+.print-test
+Unloading clojure+.print
+Unloading clojure+.error
+Loading clojure+.error
+Loading clojure+.print
+Loading clojure+.print-test
+```
+
+Quieter:
+
+```
+=> (reload/init {:output :quieter})
+=> (reload/reload)
+
+Reloaded 4 namespaces
+```
+
+Quiet (no output):
+
+```
+=> (reload/init {:output :quiet})
+=> (reload/reload)
 ```
 
 ## Comparison: Evaluating buffer

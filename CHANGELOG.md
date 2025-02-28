@@ -1,6 +1,7 @@
-# WIP
+# 0.9.0 - Feb 29, 2025
 
 - Don't re-parse files that didn't change on disk #18
+- Add :output :verbose | :quieter | :quiet #17 #19 via @velios
 
 # 0.8.0 - Feb 13, 2025
 
