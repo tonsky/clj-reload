@@ -161,24 +161,26 @@
                                      :quiet - no output at all
                                      Default: :verbose"
   [opts]
-  (with-lock
-    (binding [util/*log-fn* nil]
-      (let [dirs  (vec (or (:dirs opts) (classpath-dirs)))
-            files (or (:files opts) #".*\.cljc?")
-            now   (util/now)]
-        (alter-var-root #'*config*
-          (constantly
-            {:dirs        dirs
-             :files       files
-             :no-unload   (set (:no-unload opts))
-             :no-reload   (set (:no-reload opts))
-             :reload-hook (:reload-hook opts 'after-ns-reload)
-             :unload-hook (:unload-hook opts 'before-ns-unload)
-             :output      (:output opts :verbose)}))
-        (let [{:keys [files' namespaces']} (scan-impl nil 0)]
-          (reset! *state {:since       now
-                          :files       files'
-                          :namespaces  namespaces'}))))))
+  (if (.isHeldByCurrentThread lock)
+    (util/log "Called `init` from inside `reload`, skipping")
+    (with-lock
+      (binding [util/*log-fn* nil]
+        (let [dirs  (vec (or (:dirs opts) (classpath-dirs)))
+              files (or (:files opts) #".*\.cljc?")
+              now   (util/now)]
+          (alter-var-root #'*config*
+            (constantly
+              {:dirs        dirs
+               :files       files
+               :no-unload   (set (:no-unload opts))
+               :no-reload   (set (:no-reload opts))
+               :reload-hook (:reload-hook opts 'after-ns-reload)
+               :unload-hook (:unload-hook opts 'before-ns-unload)
+               :output      (:output opts :verbose)}))
+          (let [{:keys [files' namespaces']} (scan-impl nil 0)]
+            (reset! *state {:since       now
+                            :files       files'
+                            :namespaces  namespaces'})))))))
 
 (defn- topo-sort-fn
   "Accepts dependees map {ns -> #{downsteram-ns ...}},
@@ -304,25 +306,26 @@
   ([]
    (unload nil))
   ([opts]
-   (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
-     (swap! *state scan opts)
-     (loop [unloaded []]
-       (let [state @*state]
-         (if (not-empty (:to-unload state))
-           (let [[ns & to-unload'] (:to-unload state)
-                 keeps             (keep/resolve-keeps ns (-> state :namespaces ns :keep))]
-             (ns-unload ns)
-             (swap! *state
-               #(-> % 
-                  (assoc :to-unload to-unload')
-                  (update :namespaces update ns update :keep util/deep-merge keeps)))
-             (recur (conj unloaded ns)))
-           (do
-             (when (and
-                     (= (:output *config*) :verbose)
-                     (empty? unloaded))
-               (util/log "Nothing to unload"))
-             {:unloaded unloaded})))))))
+   (with-lock
+     (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
+       (swap! *state scan opts)
+       (loop [unloaded []]
+         (let [state @*state]
+           (if (not-empty (:to-unload state))
+             (let [[ns & to-unload'] (:to-unload state)
+                   keeps             (keep/resolve-keeps ns (-> state :namespaces ns :keep))]
+               (ns-unload ns)
+               (swap! *state
+                 #(-> % 
+                    (assoc :to-unload to-unload')
+                    (update :namespaces update ns update :keep util/deep-merge keeps)))
+               (recur (conj unloaded ns)))
+             (do
+               (when (and
+                       (= (:output *config*) :verbose)
+                       (empty? unloaded))
+                 (util/log "Nothing to unload"))
+               {:unloaded unloaded}))))))))
 
 (defn reload
   "Options:
@@ -363,9 +366,9 @@
                        (throw
                          (ex-info
                            (str "Failed to load namespace: " ns)
-                           {:unloaded  unloaded
-                            :loaded    loaded
-                            :failed    ns}
+                           {:unloaded unloaded
+                            :loaded   loaded
+                            :failed   ns}
                            ex))
                        {:unloaded  unloaded
                         :loaded    loaded

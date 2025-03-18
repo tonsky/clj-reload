@@ -1,3 +1,7 @@
+# WIP
+
+- Warn and skip about init calls that happen during reload
+
 # 0.9.0 - Feb 29, 2025
 
 - Don't re-parse files that didn't change on disk #18
