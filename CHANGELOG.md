@@ -1,4 +1,4 @@
-# WIP
+# 0.9.1 - Mar 18, 2025
 
 - Warn and skip about init calls that happen during reload
 
