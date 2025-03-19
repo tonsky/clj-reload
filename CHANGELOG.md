@@ -1,3 +1,7 @@
+# 0.9.3 - Mar 19, 2025
+
+- Added time to reload logging in :quiter mode, add final "Reloaded" to :verbose mode too
+
 # 0.9.2 - Mar 19, 2025
 
 - Log both beginning and end of reload in :quiter mode

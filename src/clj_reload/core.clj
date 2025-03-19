@@ -355,7 +355,8 @@
   ([opts]
    (with-lock
      (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
-       (let [{:keys [unloaded]} (unload opts)]
+       (let [t (System/currentTimeMillis)
+             {:keys [unloaded]} (unload opts)]
          (loop [loaded []]
            (let [state @*state]
              (if (not-empty (:to-load state))
@@ -386,8 +387,8 @@
                          (= (:output *config*) :verbose)
                          (empty? loaded))
                    (util/log "Nothing to reload"))
-                 (when (= (:output *config*) :quieter)
-                   (util/log (format "Reloaded %s namespaces" (count loaded))))
+                 (when (#{:verbose :quiter} (:output *config*))
+                   (util/log (format "Reloaded %s namespaces in %s ms" (count loaded) (- (System/currentTimeMillis) t))))
                  {:unloaded unloaded
                   :loaded   loaded})))))))))
 
