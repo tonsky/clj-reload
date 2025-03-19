@@ -387,7 +387,7 @@
                          (= (:output *config*) :verbose)
                          (empty? loaded))
                    (util/log "Nothing to reload"))
-                 (when (#{:verbose :quiter} (:output *config*))
+                 (when (#{:verbose :quieter} (:output *config*))
                    (util/log (format "Reloaded %s namespaces in %s ms" (count loaded) (- (System/currentTimeMillis) t))))
                  {:unloaded unloaded
                   :loaded   loaded})))))))))
