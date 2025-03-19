@@ -1,6 +1,10 @@
+# 0.9.2 - Mar 19, 2025
+
+- Log both beginning and end of reload in :quiter mode
+
 # 0.9.1 - Mar 18, 2025
 
-- Warn and skip about init calls that happen during reload
+- Warn about and skip init calls that happen during reload
 
 # 0.9.0 - Feb 29, 2025
 

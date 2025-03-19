@@ -309,6 +309,8 @@
    (with-lock
      (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
        (swap! *state scan opts)
+       (when (= (:output *config*) :quieter)
+         (util/log (format "Reloading %s namespaces..." (count (:to-load @*state)))))
        (loop [unloaded []]
          (let [state @*state]
            (if (not-empty (:to-unload state))
