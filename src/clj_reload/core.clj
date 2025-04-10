@@ -307,6 +307,8 @@
    (unload nil))
   ([opts]
    (with-lock
+     (when (empty? *config*)
+       (throw (IllegalStateException. "clj-reload not initialized. Call `init` first")))
      (binding [util/*log-fn* (:log-fn opts util/*log-fn*)]
        (swap! *state scan opts)
        (when (= (:output *config*) :quieter)

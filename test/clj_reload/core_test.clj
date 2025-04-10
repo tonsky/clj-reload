@@ -5,8 +5,7 @@
    [clj-reload.test-util :as tu]
    [clj-reload.util :as util]
    [clojure.java.io :as io]
-   [clojure.string :as str]
-   [clojure.test :refer [is are deftest testing use-fixtures]]))
+   [clojure.test :refer [is deftest use-fixtures]]))
 
 (defn reset []
   (tu/reset '[two-nses-second two-nses split o n no-unload m l i j k f a g h d c e double b]))
@@ -39,11 +38,13 @@
 ;       e        k     o
 
 (deftest find-namespaces-test
+  (tu/init)
   (is (= '#{a b c d double e err-runtime f g h i j k l m n no-reload no-unload o split two-nses two-nses-second} (reload/find-namespaces)))
   (is (= '#{a b c d e f g h i j k l m n o} (reload/find-namespaces #"\w")))
   (is (= '#{a b c} (reload/find-namespaces #"[abc]"))))
 
 (deftest reload-test
+  (is (thrown-with-msg? IllegalStateException #"clj-reload not initialized. Call `init` first" (tu/reload)))
   (let [opts {:require '[b e c d h g a f k j i l]}]
     (is (= '["Unloading" a "Loading" a] (modify opts 'a)))
     (is (= '["Unloading" a b "Loading" b a] (modify opts 'b)))
@@ -118,6 +119,7 @@
   (is (= '["Unloading" a d c e "Loading" e c d a] (modify {:require '[a]} 'e 'h 'g 'f 'k))))
 
 (deftest unload-test
+  (is (thrown-with-msg? IllegalStateException #"clj-reload not initialized. Call `init` first" (tu/unload)))
   (tu/init 'a 'f 'h)
   (tu/touch 'e)
   (tu/unload)
