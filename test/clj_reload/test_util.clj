@@ -19,6 +19,8 @@
 
 (defn reset [nses]
   (reset! *trace [])
+  (reset! @#'reload/*state {})
+  (alter-var-root #'reload/*config* (constantly {}))
   (let [now (util/now)]
     (reset! *time now)
     (doseq [file (next (file-seq (io/file *dir*)))
