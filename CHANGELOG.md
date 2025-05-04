@@ -1,3 +1,7 @@
+# 0.9.5 - May 4, 2025
+
+- Throw IllegalStateException when running `unload` or `reload` before `init` #20 via @carloshernandez2
+
 # 0.9.4 - Mar 19, 2025
 
 - Oopsie
