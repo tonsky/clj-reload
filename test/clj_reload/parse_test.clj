@@ -101,7 +101,9 @@ Unexpected :require form: [789 a b c]
   (is (= {} (read-str "::kw")))
   (is (= {} (read-str "::abc/kw")))
   (is (= {} (read-str "java.io.File")))
-  (is (= {} (read-str "File"))))
+  (is (= {} (read-str "File")))
+  (is (= {} (read-str "{:x 1, ::x 2}")))
+  (is (= {} (read-str "{:x/y 1, ::x/y 2}")))) ; issue-21
 
 (deftest scan-impl-test
   (let [{files :files'

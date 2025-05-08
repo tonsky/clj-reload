@@ -1,3 +1,7 @@
+# 0.9.6 - May 8, 2025
+
+- Fixed duplicate key exception on reading maps with both `::ns/k` and `:ns/k` #21
+
 # 0.9.5 - May 4, 2025
 
 - Throw IllegalStateException when running `unload` or `reload` before `init` #20 via @carloshernandez2

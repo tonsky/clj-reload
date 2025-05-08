@@ -26,7 +26,7 @@
     (resolveClass [_ sym]
       sym)
     (resolveAlias [_ sym]
-      sym)
+      (symbol (str ":" sym)))
     (resolveVar [_ sym]
       sym)))
 
