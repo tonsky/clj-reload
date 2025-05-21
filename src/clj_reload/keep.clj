@@ -20,7 +20,7 @@
 (defn meta-str [var]
   (let [meta (dissoc (meta var) :ns :file :line :column :name)]
     (when-not (empty? meta)
-      (str "^" (pr-str (util/map-vals maybe-quote meta)) " "))))
+      (str "^" (pr-str (util/map-vals meta maybe-quote)) " "))))
 
 (defn classname [ns sym]
   (-> (name ns)

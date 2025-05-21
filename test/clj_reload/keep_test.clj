@@ -9,7 +9,8 @@
 (defn wrap-test [f]
   (binding [tu/*dir* "fixtures/keep_test"]
     (tu/reset
-      '[clj-reload.keep-custom
+      '[clj-reload.dependency
+        clj-reload.keep-custom
         clj-reload.keep-defprotocol
         clj-reload.keep-defrecord
         clj-reload.keep-deftype
@@ -104,6 +105,21 @@
     (is (meta= private-fn (ns-resolve ns' 'private-fn)))
     
     (is (not= normal-2 @(ns-resolve ns' 'normal-2)))))
+
+(deftest issue-22-keep-double-reload
+  (tu/init 'clj-reload.keep-vars)
+  (let [ns     (find-ns 'clj-reload.keep-vars)
+        atom   (reset! @(ns-resolve ns '*atom) 1)
+
+        _      (tu/touch 'clj-reload.dependency)
+        _      (tu/reload)
+        atom'  @@(ns-resolve (find-ns 'clj-reload.keep-vars) '*atom)
+        _      (is (= atom atom'))
+
+        _      (tu/touch 'clj-reload.dependency)
+        _      (tu/reload)
+        atom'' @@(ns-resolve (find-ns 'clj-reload.keep-vars) '*atom)
+        _      (is (= atom atom''))]))
 
 (deftest keep-unsupported-test
   (tu/init 'clj-reload.keep-unsupported)

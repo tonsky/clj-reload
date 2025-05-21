@@ -1,3 +1,7 @@
+# 0.9.7 - May 21, 2025
+
+- Fixed defonce disappearing after double reload of a dependency #22
+
 # 0.9.6 - May 8, 2025
 
 - Fixed duplicate key exception on reading maps with both `::ns/k` and `:ns/k` #21

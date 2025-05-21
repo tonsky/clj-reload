@@ -63,7 +63,7 @@
   (not-empty
     (set (filter some? vals))))
 
-(defn map-vals [f m]
+(defn map-vals [m f]
   (when (some? m)
     (persistent!
       (reduce-kv

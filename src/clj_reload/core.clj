@@ -382,7 +382,9 @@
                    (do
                      (swap! *state #(-> %
                                       (assoc :to-load to-load')
-                                      (update-in [:namespaces ns] dissoc :keep)))
+                                      (update-in [:namespaces ns :keep] util/map-vals
+                                        (fn [keep]
+                                          (select-keys keep [:tag :form])))))
                      (recur (conj loaded ns)))))
                (do
                  (when (and

@@ -1,4 +1,6 @@
-(ns clj-reload.keep-vars)
+(ns clj-reload.keep-vars
+  (:require
+   [clj-reload.dependency]))
 
 (def normal
   (rand-int Integer/MAX_VALUE))
