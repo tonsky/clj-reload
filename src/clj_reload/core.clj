@@ -21,7 +21,7 @@
 ;                                                :verbose - print Unloading/Reloading for each namespace
 ;                                                :quieter - only print 'Reloaded N namespaces'
 ;                                                :quiet - no output at all
-;                                                default: :verbose
+;                                                default: :quieter
 
 (def ^:private ^:dynamic *config*)
 
@@ -159,7 +159,7 @@
                                      :verbose - print Unloading/Reloading for each namespace
                                      :quieter - only print 'Reloaded N namespaces'
                                      :quiet - no output at all
-                                     Default: :verbose"
+                                     Default: :quieter"
   [opts]
   (if (.isHeldByCurrentThread lock)
     (util/log "Called `init` from inside `reload`, skipping")
@@ -176,7 +176,7 @@
                :no-reload   (set (:no-reload opts))
                :reload-hook (:reload-hook opts 'after-ns-reload)
                :unload-hook (:unload-hook opts 'before-ns-unload)
-               :output      (:output opts :verbose)}))
+               :output      (:output opts :quieter)}))
           (let [{:keys [files' namespaces']} (scan-impl nil 0)]
             (reset! *state {:since       now
                             :files       files'

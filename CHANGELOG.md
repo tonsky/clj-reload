@@ -1,3 +1,8 @@
+# 0.9.8 - June 29, 2025
+
+- Change default from `:verbose` to `:quieter`
+- Usage examples in README
+
 # 0.9.7 - May 21, 2025
 
 - Fixed defonce disappearing after double reload of a dependency #22

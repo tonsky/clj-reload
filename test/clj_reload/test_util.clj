@@ -88,7 +88,8 @@
                       [nil args])]
     (reload/init
       (merge
-        {:dirs [*dir*]}
+        {:dirs [*dir*]
+         :output :verbose}
         opts))
     (when-not (empty? nses)
       (apply require nses))))

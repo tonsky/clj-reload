@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.9.7"}
+io.github.tonsky/clj-reload {:mvn/version "0.9.8"}
 ```
 
 ## The problem
@@ -288,7 +288,7 @@ Sometimes you just want to know what namespaces are there. Since `clj-reload` do
 
 ## Usage: Controlling output
 
-In init, you can set how much `clj-reload` will log during reload. Verbose (default):
+In init, you can set how much `clj-reload` will log during reload. Verbose:
 
 ```
 => (reload/init {:output :verbose})
@@ -302,7 +302,7 @@ Loading clojure+.print
 Loading clojure+.print-test
 ```
 
-Quieter:
+Quieter (default):
 
 ```
 => (reload/init {:output :quieter})
@@ -317,6 +317,93 @@ Quiet (no output):
 => (reload/init {:output :quiet})
 => (reload/reload)
 ```
+
+## Warning: holding onto old references
+
+Clj-reload works by removing whole namespaces. Everything in them including vars is gone. This is different from how Clojure REPL usually works, in which calling `def` twice will just override its _value_, keeping the var itself the same.
+
+So if you store a link to a var somewhere, it’ll be pointing to the old version after reload. If you required/aliased a namespace, it’ll be pointing to the old version after reload.
+
+For your code to see new changes, use `(resolve 'full.ns/sym)` instead of just `full.ns/sym` or even `@#'full.ns/sym`, and do not put namespaces you’ll be reloading in `:require` portion of your REPL namespace.
+
+## Examples
+
+We recommend adding clj-reload to `dev` profile of `deps.edn`:
+
+```clojure
+{:aliases
+ {:dev
+  {:extra-deps
+   {io.github.tonsky/clj-reload {:mvn/version "0.9.8"}}}}}
+```
+
+After that, configure in `dev/user.clj`:
+
+```clojure
+(ns user
+  (:require
+   [clj-reload.core :as reload]))
+
+(reload/init
+  {:dirs ["src" "dev" "test"]
+   :no-reload '#{user}})
+
+(defn reload []
+  (reload/reload))
+```
+
+Clj-Reload pairs very well with state management libarier like Component, Integrant and Mount. The simplest setup is just to stop everything before reload/start again after reload:
+
+```clojure
+(defn stop []
+  (swap! @(resolve 'main-ns/system) component/stop))
+
+(defn start []
+  (swap! @(resolve 'main-ns/system) component/start))
+
+(defn reload []
+  (stop)
+  (reload/reload)
+  (start))
+```
+
+Notice that we don’t directly import or reference `main-ns`. That would hold onto old var references, but we replace vars during reload.
+
+This approach is very simple. The downside is that we always do full stop/start of the entire system, regardless of what has changed. If we didn’t change anything related to database, why restart it?
+
+This is where reload hooks can help. You can write, e.g., in `db-ns`:
+
+```clojure
+(ns db-ns)
+
+(mount/defstate conn
+  :start
+  (db/connect db-url)
+  :stop
+  (db/disconnect conn))
+
+(defn before-ns-unload []
+  (mount/stop #'conn))
+
+(defn after-ns-reload []
+  (mount/start #'conn))
+```
+
+Now clj-reload will only start/stop your database when `db-ns` or any of the namespaces it depends on change.
+
+Finally, some stuff is not worth restarting at all. E.g. web server—yes, your app changes, but the webserver stays the same. Why restart it? In that case, put it in `defonce`:
+
+```clojure
+(defn my-app [req]
+  ...)
+
+(defonce server
+  (server/run-server
+    (fn [req] (@(resolve `my-app) req))
+    {:port 8080}))
+```
+
+Notice `resolve` trick again—when namespace reloads, `my-app` will be a different var, so if we want to keep server around we can’t have it hold onto var reference.
 
 ## Comparison: Evaluating buffer
 
@@ -380,13 +467,6 @@ This is how `clj-reload` is different:
 
 - `clj-reload` doesn’t support ClojureScript. Patches welcome.
 
-## A word of caution
-
-Clj-reload works by removing whole namespaces. Everything in them including vars is gone. This is different from how Clojure REPL usually works, in which calling `def` twice will just override its _value_, keeping the var itself the same.
-
-So if you store a link to a var somewhere, it’ll be pointing to the old version after reload. If you required/aliased a namespace, it’ll be pointing to the old version after reload.
-
-For your code to see new changes, use `(resolve 'full.ns/sym)` instead of just `full.ns/sym` or even `@#'full.ns/sym`, and do not put namespaces you’ll be reloading in `:require` portion of your REPL namespace.
 
 ## ClojureScript?
 
