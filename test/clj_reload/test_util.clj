@@ -107,3 +107,5 @@
   ([opts]
    (reload/reload
      (merge {:log-fn log-fn} opts))))
+
+(def bb? (System/getProperty "babashka.version"))

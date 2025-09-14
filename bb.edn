@@ -1,0 +1,5 @@
+;; only used for tests in scripts/test.sh
+{:min-bb-version "1.12.208"
+ :paths          ["src" "dev" "test" "fixtures/core_test" "fixtures/keep_test"]
+ :deps           {io.github.tonsky/clj-reload {:local/root "."}
+                  org.clojure/tools.namespace {:mvn/version "1.5.0"}}}

@@ -67,7 +67,7 @@
            '(defonce just-var) "(def just-var 888)"}))))
 
 (defn meta= [a b]
-  (= (dissoc (meta a) :ns) (dissoc (meta b) :ns)))
+  (= (dissoc (meta a) :ns :file) (dissoc (meta b) :ns :file)))
 
 (deftest keep-vars-test
   (tu/init 'clj-reload.keep-vars)
@@ -129,147 +129,151 @@
     (is (thrown? Exception (tu/reload)))))
 
 (deftest keep-type-test
-  (tu/init 'clj-reload.keep-deftype)
-  (let [ns             (find-ns 'clj-reload.keep-deftype)
-        normal-new     @(ns-resolve ns 'type-normal-new)
-        normal-factory @(ns-resolve ns 'type-normal-factory)
-        keep-new       @(ns-resolve ns 'type-keep-new)
-        keep-factory   @(ns-resolve ns 'type-keep-factory)
-        _              (tu/touch 'clj-reload.keep-deftype)
-        _              (tu/reload)
-        ns'            (find-ns 'clj-reload.keep-deftype)]
-    (is (not= normal-new @(ns-resolve ns' 'type-normal-new)))
-    (is (not (identical? (class normal-new) (class @(ns-resolve ns' 'type-normal-new)))))
-    
-    (is (not= normal-factory @(ns-resolve ns' 'type-normal-factory)))
-    (is (not (identical? (class normal-factory) (class @(ns-resolve ns' 'type-normal-factory)))))
-    
-    (is (not (identical? keep-new @(ns-resolve ns' 'type-keep-new))))
-    (is (= keep-new @(ns-resolve ns' 'type-keep-new)))
-    (is (identical? (class keep-new) (class @(ns-resolve ns' 'type-keep-new))))
+  (when-not tu/bb?
+    (tu/init 'clj-reload.keep-deftype)
+    (let [ns             (find-ns 'clj-reload.keep-deftype)
+          normal-new     @(ns-resolve ns 'type-normal-new)
+          normal-factory @(ns-resolve ns 'type-normal-factory)
+          keep-new       @(ns-resolve ns 'type-keep-new)
+          keep-factory   @(ns-resolve ns 'type-keep-factory)
+          _              (tu/touch 'clj-reload.keep-deftype)
+          _              (tu/reload)
+          ns'            (find-ns 'clj-reload.keep-deftype)]
+      (is (not= normal-new @(ns-resolve ns' 'type-normal-new)))
+      (is (not (identical? (class normal-new) (class @(ns-resolve ns' 'type-normal-new)))))
+      
+      (is (not= normal-factory @(ns-resolve ns' 'type-normal-factory)))
+      (is (not (identical? (class normal-factory) (class @(ns-resolve ns' 'type-normal-factory)))))
+      
+      (is (not (identical? keep-new @(ns-resolve ns' 'type-keep-new))))
+      (is (= keep-new @(ns-resolve ns' 'type-keep-new)))
+      (is (identical? (class keep-new) (class @(ns-resolve ns' 'type-keep-new))))
 
-    (is (not (identical? keep-factory @(ns-resolve ns' 'type-keep-factory))))
-    (is (= keep-factory @(ns-resolve ns' 'type-keep-factory)))
-    (is (identical? (class keep-factory) (class @(ns-resolve ns' 'type-keep-factory))))))
+      (is (not (identical? keep-factory @(ns-resolve ns' 'type-keep-factory))))
+      (is (= keep-factory @(ns-resolve ns' 'type-keep-factory)))
+      (is (identical? (class keep-factory) (class @(ns-resolve ns' 'type-keep-factory)))))))
 
 (deftest keep-record-test
-  (tu/init 'clj-reload.keep-defrecord)
-  (let [ns                 (find-ns 'clj-reload.keep-defrecord)
-        normal-new         @(ns-resolve ns 'record-normal-new)
-        normal-factory     @(ns-resolve ns 'record-normal-factory)
-        normal-map-factory @(ns-resolve ns 'record-normal-map-factory)
-        keep-new           @(ns-resolve ns 'record-keep-new)
-        keep-factory       @(ns-resolve ns 'record-keep-factory)
-        keep-map-factory   @(ns-resolve ns 'record-keep-map-factory)
-        _                  (tu/touch 'clj-reload.keep-defrecord)
-        _                  (tu/reload)
-        ns'                (find-ns 'clj-reload.keep-defrecord)]
-    (is (not= normal-new @(ns-resolve ns' 'record-normal-new)))
-    (is (not (identical? (class normal-new) (class @(ns-resolve ns' 'record-normal-new)))))
-    
-    (is (not= normal-factory @(ns-resolve ns' 'record-normal-factory)))
-    (is (not (identical? (class normal-factory) (class @(ns-resolve ns' 'record-normal-factory)))))
-    
-    (is (not= normal-map-factory @(ns-resolve ns' 'record-normal-map-factory)))
-    (is (not (identical? (class normal-map-factory) (class @(ns-resolve ns' 'record-normal-map-factory)))))
-    
-    (is (not (identical? keep-new @(ns-resolve ns' 'record-keep-new))))
-    (is (= keep-new @(ns-resolve ns' 'record-keep-new)))
-    (is (identical? (class keep-new) (class @(ns-resolve ns' 'record-keep-new))))
+  (when-not tu/bb?
+    (tu/init 'clj-reload.keep-defrecord)
+    (let [ns                 (find-ns 'clj-reload.keep-defrecord)
+          normal-new         @(ns-resolve ns 'record-normal-new)
+          normal-factory     @(ns-resolve ns 'record-normal-factory)
+          normal-map-factory @(ns-resolve ns 'record-normal-map-factory)
+          keep-new           @(ns-resolve ns 'record-keep-new)
+          keep-factory       @(ns-resolve ns 'record-keep-factory)
+          keep-map-factory   @(ns-resolve ns 'record-keep-map-factory)
+          _                  (tu/touch 'clj-reload.keep-defrecord)
+          _                  (tu/reload)
+          ns'                (find-ns 'clj-reload.keep-defrecord)]
+      (is (not= normal-new @(ns-resolve ns' 'record-normal-new)))
+      (is (not (identical? (class normal-new) (class @(ns-resolve ns' 'record-normal-new)))))
+      
+      (is (not= normal-factory @(ns-resolve ns' 'record-normal-factory)))
+      (is (not (identical? (class normal-factory) (class @(ns-resolve ns' 'record-normal-factory)))))
+      
+      (is (not= normal-map-factory @(ns-resolve ns' 'record-normal-map-factory)))
+      (is (not (identical? (class normal-map-factory) (class @(ns-resolve ns' 'record-normal-map-factory)))))
+      
+      (is (not (identical? keep-new @(ns-resolve ns' 'record-keep-new))))
+      (is (= keep-new @(ns-resolve ns' 'record-keep-new)))
+      (is (identical? (class keep-new) (class @(ns-resolve ns' 'record-keep-new))))
 
-    (is (not (identical? keep-factory @(ns-resolve ns' 'record-keep-factory))))
-    (is (= keep-factory @(ns-resolve ns' 'record-keep-factory)))
-    (is (identical? (class keep-factory) (class @(ns-resolve ns' 'record-keep-factory))))
-    
-    (is (not (identical? keep-map-factory @(ns-resolve ns' 'record-keep-map-factory))))
-    (is (= keep-map-factory @(ns-resolve ns' 'record-keep-map-factory)))
-    (is (identical? (class keep-map-factory) (class @(ns-resolve ns' 'record-keep-map-factory))))))
+      (is (not (identical? keep-factory @(ns-resolve ns' 'record-keep-factory))))
+      (is (= keep-factory @(ns-resolve ns' 'record-keep-factory)))
+      (is (identical? (class keep-factory) (class @(ns-resolve ns' 'record-keep-factory))))
+      
+      (is (not (identical? keep-map-factory @(ns-resolve ns' 'record-keep-map-factory))))
+      (is (= keep-map-factory @(ns-resolve ns' 'record-keep-map-factory)))
+      (is (identical? (class keep-map-factory) (class @(ns-resolve ns' 'record-keep-map-factory)))))))
 
 (defmethod reload/keep-methods 'deftype+ [_]
   (reload/keep-methods 'deftype))
 
 (deftest keep-custom-def-test
-  (tu/init 'clj-reload.keep-custom)
-  (let [ns    (find-ns 'clj-reload.keep-custom)
-        ctor  @(ns-resolve ns '->CustomTypeKeep)
-        value @(ns-resolve ns 'custom-type-keep)
-        _     (tu/touch 'clj-reload.keep-custom)
-        _     (tu/reload)
-        ns'   (find-ns 'clj-reload.keep-custom)]
-    (is (identical? ctor @(ns-resolve ns' '->CustomTypeKeep)))
-    (is (identical? (class value) (class @(ns-resolve ns' 'custom-type-keep))))))
+  (when-not tu/bb?
+    (tu/init 'clj-reload.keep-custom)
+    (let [ns    (find-ns 'clj-reload.keep-custom)
+          ctor  @(ns-resolve ns '->CustomTypeKeep)
+          value @(ns-resolve ns 'custom-type-keep)
+          _     (tu/touch 'clj-reload.keep-custom)
+          _     (tu/reload)
+          ns'   (find-ns 'clj-reload.keep-custom)]
+      (is (identical? ctor @(ns-resolve ns' '->CustomTypeKeep)))
+      (is (identical? (class value) (class @(ns-resolve ns' 'custom-type-keep)))))))
 
 (deftest keep-protocol-test
-  (tu/init 'clj-reload.keep-defprotocol)
-  (let [ns                (find-ns 'clj-reload.keep-defprotocol)
-        proto             @(ns-resolve ns 'IProto)
-        method            @(ns-resolve ns '-method)
-        rec-inline        @(ns-resolve ns 'rec-inline)
-        rec-extend-proto  @(ns-resolve ns 'rec-extend-proto)
-        rec-extend-type   @(ns-resolve ns 'rec-extend-type)
-        rec-extend        @(ns-resolve ns 'rec-extend)
-        extend-meta       @(ns-resolve ns 'extend-meta)
-        
-        _                 (tu/touch 'clj-reload.keep-defprotocol)
-        _                 (tu/reload)
-        
-        ns'               (find-ns 'clj-reload.keep-defprotocol)
-        proto'            @(ns-resolve ns' 'IProto)
-        method'           @(ns-resolve ns' '-method)
-        rec-inline'       @(ns-resolve ns' 'rec-inline)
-        rec-extend-proto' @(ns-resolve ns' 'rec-extend-proto)
-        rec-extend-type'  @(ns-resolve ns' 'rec-extend-type)
-        rec-extend'       @(ns-resolve ns' 'rec-extend)
-        extend-meta'      @(ns-resolve ns' 'extend-meta)]
-    
-    ;; make sure reload happened
-    (is (not (identical? rec-inline rec-inline')))
-    (is (not (identical? (class rec-inline) (class rec-inline'))))
-    
-    (is (satisfies? proto rec-inline))
-    (is (satisfies? proto rec-inline'))    
-    (is (satisfies? proto' rec-inline))
-    (is (satisfies? proto' rec-inline'))
-    (is (= :rec-inline (method rec-inline)))
-    (is (= :rec-inline (method rec-inline')))
-    (is (= :rec-inline (method' rec-inline)))
-    (is (= :rec-inline (method' rec-inline')))
-    
-    (is (satisfies? proto rec-extend-proto))
-    ; (is (satisfies? proto rec-extend-proto'))
-    (is (satisfies? proto' rec-extend-proto))
-    (is (satisfies? proto' rec-extend-proto'))
-    (is (= :rec-extend-proto (method rec-extend-proto)))
-    ; (is (= :rec-extend-proto (method rec-extend-proto')))
-    (is (= :rec-extend-proto (method' rec-extend-proto)))
-    (is (= :rec-extend-proto (method' rec-extend-proto')))
-    
-    (is (satisfies? proto rec-extend-type))
-    ; (is (satisfies? proto rec-extend-type'))
-    (is (satisfies? proto' rec-extend-type))
-    (is (satisfies? proto' rec-extend-type'))
-    (is (= :rec-extend-type (method rec-extend-type)))
-    ; (is (= :rec-extend-type (method rec-extend-type')))
-    (is (= :rec-extend-type (method' rec-extend-type)))
-    (is (= :rec-extend-type (method' rec-extend-type')))
-    
-    (is (satisfies? proto rec-extend))
-    ; (is (satisfies? proto rec-extend'))
-    (is (satisfies? proto' rec-extend))
-    (is (satisfies? proto' rec-extend'))
-    (is (= :rec-extend (method rec-extend)))
-    ; (is (= :rec-extend (method rec-extend')))
-    (is (= :rec-extend (method' rec-extend)))
-    (is (= :rec-extend (method' rec-extend')))
-    
-    ; (is (satisfies? proto extend-meta))
-    ; (is (satisfies? proto extend-meta'))
-    ; (is (satisfies? proto' extend-meta))
-    ; (is (satisfies? proto' extend-meta'))
-    (is (= :extend-meta (method extend-meta)))
-    (is (= :extend-meta (method extend-meta')))
-    (is (= :extend-meta (method' extend-meta)))
-    (is (= :extend-meta (method' extend-meta')))))
+  (when-not tu/bb?
+    (tu/init 'clj-reload.keep-defprotocol)
+    (let [ns                (find-ns 'clj-reload.keep-defprotocol)
+          proto             @(ns-resolve ns 'IProto)
+          method            @(ns-resolve ns '-method)
+          rec-inline        @(ns-resolve ns 'rec-inline)
+          rec-extend-proto  @(ns-resolve ns 'rec-extend-proto)
+          rec-extend-type   @(ns-resolve ns 'rec-extend-type)
+          rec-extend        @(ns-resolve ns 'rec-extend)
+          extend-meta       @(ns-resolve ns 'extend-meta)
+          
+          _                 (tu/touch 'clj-reload.keep-defprotocol)
+          _                 (tu/reload)
+          
+          ns'               (find-ns 'clj-reload.keep-defprotocol)
+          proto'            @(ns-resolve ns' 'IProto)
+          method'           @(ns-resolve ns' '-method)
+          rec-inline'       @(ns-resolve ns' 'rec-inline)
+          rec-extend-proto' @(ns-resolve ns' 'rec-extend-proto)
+          rec-extend-type'  @(ns-resolve ns' 'rec-extend-type)
+          rec-extend'       @(ns-resolve ns' 'rec-extend)
+          extend-meta'      @(ns-resolve ns' 'extend-meta)]
+      
+      ;; make sure reload happened
+      (is (not (identical? rec-inline rec-inline')))
+      (is (not (identical? (class rec-inline) (class rec-inline'))))
+      
+      (is (satisfies? proto rec-inline))
+      (is (satisfies? proto rec-inline'))    
+      (is (satisfies? proto' rec-inline))
+      (is (satisfies? proto' rec-inline'))
+      (is (= :rec-inline (method rec-inline)))
+      (is (= :rec-inline (method rec-inline')))
+      (is (= :rec-inline (method' rec-inline)))
+      (is (= :rec-inline (method' rec-inline')))
+      
+      (is (satisfies? proto rec-extend-proto))
+      ; (is (satisfies? proto rec-extend-proto'))
+      (is (satisfies? proto' rec-extend-proto))
+      (is (satisfies? proto' rec-extend-proto'))
+      (is (= :rec-extend-proto (method rec-extend-proto)))
+      ; (is (= :rec-extend-proto (method rec-extend-proto')))
+      (is (= :rec-extend-proto (method' rec-extend-proto)))
+      (is (= :rec-extend-proto (method' rec-extend-proto')))
+      
+      (is (satisfies? proto rec-extend-type))
+      ; (is (satisfies? proto rec-extend-type'))
+      (is (satisfies? proto' rec-extend-type))
+      (is (satisfies? proto' rec-extend-type'))
+      (is (= :rec-extend-type (method rec-extend-type)))
+      ; (is (= :rec-extend-type (method rec-extend-type')))
+      (is (= :rec-extend-type (method' rec-extend-type)))
+      (is (= :rec-extend-type (method' rec-extend-type')))
+      
+      (is (satisfies? proto rec-extend))
+      ; (is (satisfies? proto rec-extend'))
+      (is (satisfies? proto' rec-extend))
+      (is (satisfies? proto' rec-extend'))
+      (is (= :rec-extend (method rec-extend)))
+      ; (is (= :rec-extend (method rec-extend')))
+      (is (= :rec-extend (method' rec-extend)))
+      (is (= :rec-extend (method' rec-extend')))
+      
+      ; (is (satisfies? proto extend-meta))
+      ; (is (satisfies? proto extend-meta'))
+      ; (is (satisfies? proto' extend-meta))
+      ; (is (satisfies? proto' extend-meta'))
+      (is (= :extend-meta (method extend-meta)))
+      (is (= :extend-meta (method extend-meta')))
+      (is (= :extend-meta (method' extend-meta)))
+      (is (= :extend-meta (method' extend-meta'))))))
 
 (deftest keep-dependent-test
   (tu/init 'clj-reload.keep-downstream)

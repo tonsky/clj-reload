@@ -180,9 +180,8 @@
       (util/ns-load-file content ns file))
     
     ;; check 
-    (@#'clojure.core/throw-if (not (find-ns ns))
-      "namespace '%s' not found after loading '%s'"
-      ns (.getPath file))
+    (when (not (find-ns ns))
+      (throw (Exception. (format "namespace '%s' not found after loading '%s'" ns (.getPath file)))))
       
     (finally
       ;; drop everything in stash
