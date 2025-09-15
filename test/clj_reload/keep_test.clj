@@ -67,7 +67,9 @@
            '(defonce just-var) "(def just-var 888)"}))))
 
 (defn meta= [a b]
-  (= (dissoc (meta a) :ns :file) (dissoc (meta b) :ns :file)))
+  (if tu/bb?
+    (= (dissoc (meta a) :ns :file) (dissoc (meta b) :ns :file))
+    (= (dissoc (meta a) :ns)       (dissoc (meta b) :ns))))
 
 (deftest keep-vars-test
   (tu/init 'clj-reload.keep-vars)
