@@ -1,3 +1,7 @@
+# 1.0.0 - Sep 15, 2025
+
+- Support babashka #25 via @filipesilva
+
 # 0.9.8 - June 29, 2025
 
 - Change default from `:verbose` to `:quieter`

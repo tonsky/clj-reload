@@ -28,10 +28,11 @@ jobs:
           echo "$JAVA_HOME_21_X64/bin" >> $GITHUB_PATH
 
       - name: Setup Clojure
-        uses: DeLaGuardo/setup-clojure@13.1
+        uses: DeLaGuardo/setup-clojure@13.4
         with:
           cli: latest
           lein: latest
+          bb: latest
       
       - run: ./script/test.sh
 

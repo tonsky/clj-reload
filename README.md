@@ -7,7 +7,7 @@ This is only about namespace dependencies within a single project. It has nothin
 ## Dependency
 
 ```clojure
-io.github.tonsky/clj-reload {:mvn/version "0.9.8"}
+io.github.tonsky/clj-reload {:mvn/version "1.0.0"}
 ```
 
 ## The problem
@@ -334,7 +334,7 @@ We recommend adding clj-reload to `dev` profile of `deps.edn`:
 {:aliases
  {:dev
   {:extra-deps
-   {io.github.tonsky/clj-reload {:mvn/version "0.9.8"}}}}}
+   {io.github.tonsky/clj-reload {:mvn/version "1.0.0"}}}}}
 ```
 
 After that, configure in `dev/user.clj`:
